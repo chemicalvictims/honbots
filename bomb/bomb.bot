@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="BombBot"
+	description="Bombardier Bot"
+	heroname="Hero_Bombardier"
+	rootlua="bomb_main.lua"
+	defaultplayername="BombBot"
+	precachepath="/heroes/bomb/"
+/>

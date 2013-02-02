@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="PebblesBot"
+	description="Kairus101's Pebbles player bot"
+	heroname="Hero_Rocky"
+	rootlua="pebbs_main.lua"
+	defaultplayername="PebblesBot"
+	precachepath="/heroes/rocky/"
+/>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="BlacksmithBot"
+	description="bot_description_blacksmith"
+	heroname="Hero_DwarfMagi"
+	rootlua="blacksmith_main.lua"
+	defaultplayername="Too Bad It's Me"
+	precachepath="/heroes/dwarf_magi/"
+/>
