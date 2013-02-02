@@ -103,19 +103,19 @@ object.tSkills = {
 }
 
 -- bonus agression points if a skill/item is available for use
-object.nFireballUp = 50
-object.nFlamingHammerUp = 12 
+object.nFireballUp = 10
+object.nFlamingHammerUp = 10
 object.nUltLevelMul = 10
 
 
 -- bonus agression points that are applied to the bot upon successfully using a skill/item
-object.nFireballUse = 20
-object.nFlamingHammerUse = 15
+object.nFireballUse = 30
+object.nFlamingHammerUse = 20
 
 
 --thresholds of aggression the bot must reach to use these abilities
-object.nFireballThreshold = 0
-object.nFlamingHammerThreshold = 10
+object.nFireballThreshold = 40
+object.nFlamingHammerThreshold = 20
 
 
 
@@ -180,6 +180,22 @@ object.onthink 	= object.onthinkOverride
 -- @param: eventdata
 -- @return: none
 function object:oncombateventOverride(EventData)
+	local nAddBonus = 0
+
+	if EventData.Type == "Ability" then
+        if EventData.InflictorName == "Ability_DwarfMagi2" then
+            nAddBonus = nAddBonus + object.nFlamingHammerUse
+        elseif EventData.InflictorName == "Ability_DwarfMagi1" then
+            nAddBonus = nAddBonus + object.nFireballUse
+        end
+    end
+ 
+   if nAddBonus > 0 then
+        core.DecayBonus(self)
+        core.nHarassBonus = core.nHarassBonus + nAddBonus
+    end
+
+
 end
 -- override combat event trigger function.
 object.oncombateventOld = object.oncombatevent
@@ -248,6 +264,7 @@ local function HarassHeroExecuteOverride(botBrain)
         local abilFireball = skills.abilQ
         local abilHammer = skills.abilW
 
+    	-- fireball
         if not bActionTaken then
             if abilFireball:CanActivate() and nLastHarassUtility > botBrain.nFireballThreshold then
                 local nRange = abilFireball:GetRange()
@@ -255,8 +272,18 @@ local function HarassHeroExecuteOverride(botBrain)
                     bActionTaken = core.OrderAbilityEntity(botBrain, abilFireball, unitTarget)
                 end          
             end
-
         end
+
+		 -- hammer
+		if not bActionTaken then
+			if abilHammer:CanActivate() and nLastHarassUtility > botBrain.nFlamingHammerThreshold then
+				local nRange = abilHammer:GetRange()
+				if nTargetDistanceSq < (nRange * nRange) then
+                    bActionTaken = core.OrderAbilityEntity(botBrain, abilHammer, unitTarget)
+				end
+			end
+		end
+
     end
     
     if not bActionTaken then
