@@ -105,7 +105,7 @@ object.tSkills = {
 -- bonus agression points if a skill/item is available for use
 object.nFireballUp = 10
 object.nFlamingHammerUp = 10
-object.nUltLevelMul = 10
+object.nUltLevelMul = 0.5 -- bs expect more of his Q if his ult is leveled
 
 
 -- bonus agression points that are applied to the bot upon successfully using a skill/item
@@ -213,7 +213,7 @@ local function CustomHarassUtilityOverride(hero)
 	local nUtil = 0
 
     if skills.abilQ:CanActivate() then
-        nUtil = nUtil + object.nFireballUp
+        nUtil = nUtil + object.nFireballUp * (1 + object.nUltLevelMul * skills.abilR:GetLevel())
     end
 
     if skills.abilW:CanActivate() then
