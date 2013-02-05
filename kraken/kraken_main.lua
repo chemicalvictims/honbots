@@ -1,5 +1,5 @@
 --***************************************--
---******** \KrakenBot v0.000001/ ********--
+--******** \KrakenBot v0.000002/ ********--
 --************** \Created/ **************--
 --************* \Geramie A/ *************--
 --********** \[RC2W]optx_2000/ **********--
@@ -101,19 +101,19 @@ end
 --  Ability use increases harass util for a time
 -------------------------------------------------------
 
-object.abilTorrentUpBonus = 5
-object.abilTsunamiChargeUpBonus = 10
-object.abilSplashUpBonus = 10
+object.abilTorrentUpBonus = 20
+object.abilTsunamiChargeUpBonus = 20
+object.abilSplashUpBonus = 15
 object.abilKrakenUpBonus = 40
 
 object.abilTorrentUseBonus = 25
-object.abilTsunamiChargeUseBonus = 40
+object.abilTsunamiChargeUseBonus = 20
 object.abilSplashUseBonus = 0
 object.abilKrakenUseBonus = 50
 
-object.abilTorrentUtilThreshold = 35
-object.abilTsunamiChargeUtilThreshold = 45
-object.abilKrakenUtilThreshold = 65
+object.abilTorrentUtilThreshold = 55
+object.abilTsunamiChargeUtilThreshold = 40
+object.abilKrakenUtilThreshold = 50
 
 local function AbilitiesUpUtilityFn(hero)
 	local bDebugLines = false
@@ -290,7 +290,7 @@ behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 behaviorLib.StartingItems = {"Item_LoggersHatchet", "Item_IronBuckler", "Item_RunesOfTheBlight"}
 behaviorLib.LaneItems = {"Item_Steamboots", "Item_MysticVestments", "Item_HelmOfTheVictim", "Item_TrinketOfRestoration", "Item_TrinketOfRestoration", "Item_HomecomingStone"}
 behaviorLib.MidItems = {"Item_Lifetube", "Item_Beastheart"}
-behaviorLib.LateItems = {"Item_BehemothsHeart", "Item_DaemonicBreastplate", "Item_Critical 4"}
+behaviorLib.LateItems = {"Item_Freeze", "Item_DaemonicBreastplate", "Item_Critical 4"}
 
 
 --[[ colors:
