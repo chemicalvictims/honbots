@@ -189,8 +189,8 @@ function object:oncombateventOverride(EventData)
             nAddBonus = nAddBonus + object.nFireballUse
         end
     end
- 
-   if nAddBonus > 0 then
+
+    if nAddBonus > 0 then
         core.DecayBonus(self)
         core.nHarassBonus = core.nHarassBonus + nAddBonus
     end

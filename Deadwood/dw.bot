@@ -1,0 +1,9 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<bot
+	name="DeadwoodBot"
+	description="DeadwoodBot"
+	heroname="Hero_Deadwood"
+	rootlua="dw_main.lua"
+	defaultplayername="DeadWoodBot"
+	precachepath="/heroes/Deadwood/"
+/>

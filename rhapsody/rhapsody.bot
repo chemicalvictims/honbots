@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="RhapsodyBot"
+	description="Shoutout to limo, my next bot will kill u 1v1"
+	heroname="Hero_Rhapsody"
+	rootlua="rhapsody_main.lua"
+	defaultplayername="RhapsodyBot"
+	precachepath="/heroes/rhapsody/"
+/>

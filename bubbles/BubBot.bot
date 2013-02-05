@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="BubBot"
+	description="Bubbles is a hero."
+	heroname="Hero_Bubbles"
+	rootlua="bubbles_main.lua"
+	defaultplayername="BubBot"
+	precachepath="/heroes/bubbles"
+/>

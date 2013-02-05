@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="EngiBot"
+	description="EngiBot by V1P3R`"
+	heroname="Hero_Engineer"
+	rootlua="engi_main.lua"
+	defaultplayername="EngineerBot"
+	precachepath="/heroes/engineer/"
+/>
