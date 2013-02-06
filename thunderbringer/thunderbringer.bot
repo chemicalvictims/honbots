@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <bot
 	name="ThunderbringerBot"
-	description="bot_description_kunas"
+	description="A bot made by Atornius that likes to electrocute stuff"
 	heroname="Hero_Kunas"
 	rootlua="thunderbringer_main.lua"
 	defaultplayername="ThunderbringerBot"
