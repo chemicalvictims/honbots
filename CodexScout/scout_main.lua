@@ -114,7 +114,7 @@ local function IsLowMana()
 	local nMaxMana = core.unitSelf:GetMaxMana()
 	local nMana = core.unitSelf:GetMana()
 	
-	if nMana < (nMaxMana * 0.1) then
+	if nMana < (nMaxMana * 0.3) then
 		return true
 	else
 		return false
@@ -149,7 +149,7 @@ local function GetCanMarksmanShotKillTarget(unitTarget)
 	local nHealth = unitTarget:GetHealth()
 	local nRegen = unitTarget:GetHealthRegen()
 	local nTime = skills.abilMarksmanShot:GetChannelTime()
-	nTime = (nTime + skills.abilMarksmanShot:GetCastTime() + 1) * 0.001
+	nTime = (nTime + skills.abilMarksmanShot:GetCastTime() + 100) * 0.001
 	nHealth = nHealth + (nRegen * nTime)
 	
 	local nDamage = 250
@@ -229,19 +229,19 @@ behaviorLib.nTargetPositioningMul = 0.6
 ----------------------------------
 
 object.nVanishUp =  10
-object.nElectricEyeUp = 5
-object.nDisarmUp = 20
-object.nMarksmanShotUp = 40
-object.nNukeUp = 40
+object.nElectricEyeUp = 3
+object.nDisarmUp = 6
+object.nMarksmanShotUp = 30
+object.nNukeUp = 10
 
-object.nVanishUse = 30
-object.nDisarmUse = 20
-object.nElectricEyeUse = 5
-object.nDetonateUse = 20
-object.nMarksmanShotUse = 70
-object.nNukeUse = 70
+object.nVanishUse = 15
+object.nDisarmUse = 5
+object.nElectricEyeUse = 0
+object.nDetonateUse = 5
+object.nMarksmanShotUse = 50
+object.nNukeUse = 10
 
-object.nVanishThreshold = 30
+object.nVanishThreshold = 40
 object.nElectricEyeThreshold = 40
 object.nMarksmanShotThreshold = 50
 object.nNukeThreshold = 40
@@ -252,15 +252,15 @@ local function AbilitiesUpUtility(hero)
 	
 	local nUtility = 0
 	
-	if skills.abilVanish:CanActivate() then
+	if skills.abilVanish:CanActivate() and not IsLowHealth() then
 		nUtility = nUtility + object.nVanishUp
 	end
 	
-	if skills.abilDisarm:CanActivate() then
+	if skills.abilDisarm:CanActivate() and not IsLowHealth()  then
 		nUtility = nUtility + object.nDisarmUp
 	end
 
-	if skills.abilElectricEye:CanActivate() then
+	if skills.abilElectricEye:CanActivate() and not IsLowHealth()  then
 		nUtility = nUtility + object.nElectricEyeUp
 	end
 
@@ -311,6 +311,9 @@ function object:oncombateventOverride(EventData)
 	
 	if nAddBonus > 0 then
 		--decay before we add
+		if IsLowHealth() then
+			nAddBonus = nAddBonus / 2
+		end
 		core.DecayBonus(self)
 		core.nHarassBonus = core.nHarassBonus + nAddBonus
 	end
@@ -374,12 +377,13 @@ local function HarassHeroExecuteOverride(botBrain)
 		local nRange = abilMarksmanShot:GetRange() + core.GetExtraRange(unitSelf) + core.GetExtraRange(unitTarget)
 		
 		if bCanSee then
-			if nLastHarassUtility > botBrain.nMarksmanShotThreshold and (itemNuke and itemNuke:CanActivate()) then
+			if nLastHarassUtility > botBrain.nMarksmanShotThreshold and itemNuke then
 				if abilMarksmanShot:CanActivate() and nTargetDistanceSq < (nRange * nRange) then
 					if bDebugEchos then BotEcho("Casting Marksman Shot") end
 					bActionTaken = core.OrderAbilityEntity(botBrain, abilMarksmanShot, unitTarget)
 				end
-			elseif GetCanMarksmanShotKillTarget(unitTarget) and ((itemNuke and itemNuke:CanActivate() == false) or not itemNuke) then 
+			elseif GetCanMarksmanShotKillTarget(unitTarget) 
+			and not itemNuke and nTargetDistanceSq > (unitSelf:GetAttackRange() * 3) then 
 				if abilMarksmanShot:CanActivate() and nTargetDistanceSq < (nRange * nRange) then
 					if bDebugEchos then BotEcho("Killing with Marksman Shot") end
 					bActionTaken = core.OrderAbilityEntity(botBrain, abilMarksmanShot, unitTarget)
@@ -411,13 +415,16 @@ local function HarassHeroExecuteOverride(botBrain)
 		--Vanish
 		if not bActionTaken then
 			--activate when just out of melee range of target
-			if abilVanish:CanActivate() and nLastHarassUtility > botBrain.nVanishThreshold 
+			if abilVanish:CanActivate() and HasManaRegen() and not IsLowMana() and unitSelf:IsStealth() ~= true then
+				if bDebugEchos then BotEcho("Spaming Vanish") end
+				bActionTaken = core.OrderAbility(botBrain, abilVanish)
+			elseif abilVanish:CanActivate() and nLastHarassUtility > botBrain.nVanishThreshold 
 			and unitSelf:IsStealth() ~= true and (not IsLowMana() or HasManaRegen()) then
 				if bDebugEchos then BotEcho("Casting Vanish") end
 				bActionTaken = core.OrderAbility(botBrain, abilVanish)
 			elseif abilVanish:CanActivate() and unitSelf:IsStealth() == true and IsLowMana() and not HasManaRegen() then
 				if bDebugEchos then BotEcho("Turning Off Vanish, Low Mana") end
-				bActionTaken = core.OrderAbility(botBrain, abilVanish)
+				--bActionTaken = core.OrderAbility(botBrain, abilVanish)
 			end
 		end	
 	
@@ -500,11 +507,12 @@ core.FindItems = funcFindItemsOverride
 ----------------------------------
 --  RetreatFromThreat Override
 ----------------------------------
-object.nRetreatStealthThreshold = 20
+object.nRetreatStealthThreshold = 35
+behaviorLib.nRecentDamageMul = 0.50
 
 --Unfortunately this utility is kind of volatile, so we basically have to deal with util spikes
 function funcRetreatFromThreatExecuteOverride(botBrain)
-	local bDebugEchos = true
+	local bDebugEchos = false
 	
 	local bActionTaken = false
 	local unitSelf = core.unitSelf
@@ -512,16 +520,14 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 	--Vanish
 	if not bActionTaken then
 		local abilVanish = skills.abilVanish
-		--activate when just out of melee range of target
-		if abilVanish:CanActivate() and unitSelf:IsStealth() ~= true then
-			--if behaviorLib.lastRetreatUtil >= object.nRetreatStealthThreshold and IsLowHealth() then
-			if IsLowHealth() then
-				if bDebugEchos then BotEcho("RUN!!!!!! Casting Vanish") end
-				bActionTaken = core.OrderAbility(botBrain, abilVanish)
-			end
-		elseif unitSelf:IsStealth() == true then
+		
+		if behaviorLib.lastRetreatUtil >= object.nRetreatStealthThreshold and 
+		abilVanish:CanActivate() and unitSelf:IsStealth() ~= true then
+			if bDebugEchos then BotEcho("RUN!!!!!! Casting Vanish") end
+			bActionTaken = core.OrderAbility(botBrain, abilVanish)
+			return object.RetreatFromThreatExecuteOld(botBrain)
+		elseif unitSelf:IsStealth() == true and IsLowHealth() then
 			if bDebugEchos then BotEcho("RUN!!!!!! Already Invis") end
-			bActionTaken = true
 		end
 	end
 	
@@ -531,6 +537,36 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 end
 object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
 behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
+
+function funcHealAtWellExecuteOverride(botBrain)
+	local bDebugEchos = false
+	
+	local bActionTaken = false
+	local unitSelf = core.unitSelf
+	
+	--Vanish
+	if not bActionTaken then
+		local abilVanish = skills.abilVanish
+		
+		if abilVanish:CanActivate() and unitSelf:IsStealth() ~= true then
+			if IsLowHealth() or not IsLowMana() or HasManaRegen() then
+				if bDebugEchos then BotEcho("WELL!!!!!! Casting Vanish") end
+				bActionTaken = core.OrderAbility(botBrain, abilVanish)
+				return object.HealAtWellExecuteOld(botBrain)
+			end
+		elseif unitSelf:IsStealth() == true then
+			if bDebugEchos then BotEcho("############################") end
+			if bDebugEchos then BotEcho("# WELL!!!!!! Already Invis #") end
+			if bDebugEchos then BotEcho("############################") end
+		end
+	end
+	
+	if not bActionTaken then
+		return object.HealAtWellExecuteOld(botBrain)
+	end
+end
+object.HealAtWellExecuteOld = behaviorLib.HealAtWellExecute
+behaviorLib.HealAtWellBehavior["Execute"] = funcHealAtWellExecuteOverride
 
 ----------------------------------
 --	Scout items
@@ -549,7 +585,7 @@ behaviorLib.LateItems =
 	{"Item_Brutalizer", "Item_Pierce 3", "Item_BehemothsHeart"} 
 	--{"Item_HarkonsBlade", "Item_BehemothsHeart", 'Item_Damage9'} --Item_Lightning2 is Charged Hammer. Item_Damage9 is Doombringer
 
-
+ 
 
 --[[ colors:
 	red

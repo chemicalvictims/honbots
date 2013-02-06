@@ -101,19 +101,25 @@ object.tSkills = {
     4, 4, 4, 4, 4,
 }
 
+--melee weight overrides
+behaviorLib.nCreepPushbackMul = 0.5
+behaviorLib.nTargetPositioningMul = 0.6
+
 -- bonus agression points if a skill/item is available for use
 
 object.nIllusiveUp = 20
-object.nVaultUp = 40 
+object.nVaultUp = 30 
 object.nSlamUp = 20
 object.nStealthUp = 20
+object.nIllusionUp = 20
 
 -- bonus agression points that are applied to the bot upon successfully using a skill/item
 
-object.nIllusiveUse = 20
-object.nVaultUse = 50 
-object.nSlamUse = 20
+object.nIllusiveUse = 25
+object.nVaultUse = 30 
+object.nSlamUse = 25
 object.nStealthUse = 20
+object.nIllusionUse = 20
 
 --thresholds of aggression the bot must reach to use these abilities
 
@@ -122,6 +128,11 @@ object.nVaultThreshold = 20
 object.nVault2Threshold = 80 
 object.nSlamThreshold = 100
 object.nStealthThreshold = 30
+object.nIllusionThreshold = 30
+
+--retreat thresholds
+
+object.nretreatStealthThreshold = 60
 
 
 --####################################################################
@@ -135,9 +146,37 @@ object.nStealthThreshold = 30
 object.killMessages = {}
 object.killMessages.General = {
 	"Didn't even break a sweat!","KA-ME-HA-ME-HA!!!","Wake me up when you're done monkeying around"
-    }
-object.killMessages.Hero_MonkeyKing       = { "I won't lose to my own clone!", "The original is always the best!", 
-					"There is only one true Monkey King!" }
+	}
+object.killMessages.Hero_Accursed = {
+	"Such a dull blade won't kill me", "You're just falling apart!"
+	}
+object.killMessages.Hero_Arachna = {
+	"Ewww, I think I stepped on a bug", "That's one pest out of my hair"
+	}
+object.killMessages.Hero_Chronos = {
+	"Bet you didn't see that coming!", "Not even time can stop me!"
+	}
+object.killMessages.Hero_Defiler = {
+	"Ugh, get your slimy hands off me", "From what rock did you crawl out under from?"
+	}
+object.killMessages.Hero_Shaman = {
+	"Wow you really must be demented to suck that much", "Keep the mask on, no one wants to see your ugly mug"
+	}
+object.killMessages.Hero_MonkeyKing = { 
+	"I won't lose to my own clone!", "The original is always the best!", "There is only one true Monkey King!" 
+	}
+object.killMessages.Hero_Frosty = {
+	"You don't tell me to chill!", "Let's break the ice shall we?"
+	}
+object.killMessages.Hero_Gemini = {
+	"Play Dead! Oh wait, you're not playing?", "Never was a dog-person"
+	}
+object.killMessages.Hero_Scout = {
+	"You can't disarm me!", "Scouted and Routed!", "And here I thought I was the only monkey around here"
+	}
+object.killMessages.Hero_Rocky = {
+	"I break rocks in my sleep", "Pebbles? Huh, guess your name speaks for you", "Duuuuuuude it's Stun THEN Chuck!!!"
+	}
  
 local function ProcessKillChatOverride(unitTarget, sTargetPlayerName)
     local nCurrentTime = HoN.GetGameTime()
@@ -148,10 +187,11 @@ local function ProcessKillChatOverride(unitTarget, sTargetPlayerName)
     local nToSpamOrNotToSpam = random()
          
     if(nToSpamOrNotToSpam < core.nKillChatChance) then
-        local nDelay = random(core.nChatDelayMin, core.nChatDealyMax) 
+        local nDelay = random(core.nChatDelayMin, core.nChatDelayMax) 
         local tHeroMessages = object.killMessages[unitTarget:GetTypeName()]
-         
-        if tHeroMessages ~= nil and random() >= 0.7 then
+	
+	local sTargetName = sTargetPlayerName or unitTarget:GetDisplayName()
+        if tHeroMessages ~= nil and random() <= 0.7 then
             local nMessage = random(#tHeroMessages)
             core.AllChat(format(tHeroMessages[nMessage], sTargetPlayerName), nDelay)
         else
@@ -248,7 +288,38 @@ end
 object.oncombateventOld = object.oncombatevent
 object.oncombatevent     = object.oncombateventOverride
 
-
+------------------------------------------------------
+-- Harass Values Based On Health   --
+------------------------------------------------------
+local function HarassHealth(hero)
+	local unitSelf = core.unitSelf
+	local nUtil = 0
+	
+	if unitSelf:GetHealthPercent() <= 0.15 then
+		nUtil = -200
+	elseif unitSelf:GetHealthPercent() <=0.25 then
+		if hero:GetHealthPercent() >=0.8 then
+			nUtil = -100
+		elseif hero:GetHealthPercent() >=0.5 then
+			nUtil = -50
+		else
+			nUtil = -25
+		end
+	elseif unitSelf:GetHealthPercent() <=0.50 then
+		nUtil = 0
+	elseif unitSelf:GetHealthPercent() <= 1 then
+		if hero:GetHealthPercent() <=0.5 then
+			nUtil = 40
+		elseif hero:GetHealthPercent() <=0.8 then
+			nUtil = 20
+		else
+			nUtil = 10
+		end
+	end
+	
+	nUtil = nUtil + (unitSelf:GetManaPercent() * 20)
+	return nUtil
+end
 
 ------------------------------------------------------
 --            customharassutility override          --
@@ -258,6 +329,9 @@ object.oncombatevent     = object.oncombateventOverride
 -- @return: number
 local function CustomHarassUtilityFnOverride(hero)
     local nUtil = 0
+    local unitSelf = core.unitSelf
+       
+	nUtil = HarassHealth(hero)
      
     if skills.abilQ:CanActivate() then
         nUnil = nUtil + object.nIllusiveUp
@@ -275,15 +349,14 @@ local function CustomHarassUtilityFnOverride(hero)
         nUtil = nUtil + object.nStealthUp
     end
     
-    BotEcho(hero:GetHealthPercent())
-	if (hero:GetHealthPercent()<50) then
-		nUtil = nUtil + 80
-	end
+    if object.itemIllusion and object.itemIllusion:CanActivate() then
+        nUtil = nUtil + object.nIllusionUp
+    end
  
     return nUtil
 end
 -- assisgn custom Harrass function to the behaviourLib object
-behaviorLib.CustomHarassUtilityFn = CustomHarassUtilityFnOverride   
+behaviorLib.CustomHarassUtility = CustomHarassUtilityFnOverride   
 
 
 
@@ -327,6 +400,9 @@ local function HarassHeroExecuteOverride(botBrain)
         local itemStealth = core.itemStealth
 	local itemIllusion = core.itemIllusion
 	local itemBattery = core.itemBattery
+	local itemGhostMarchers = core.itemGhostMarchers
+	
+	BotEcho("Attacking - ".. nLastHarassUtility)
 		
 		if itemBattery then
 			if not bActionTaken then
@@ -352,22 +428,25 @@ local function HarassHeroExecuteOverride(botBrain)
 			end
 		end
 		
-
-	
 		if not bActionTaken and not bStealth then
+		
 			if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Checking Vault") end
 			local abilVault = skills.abilW
 			if abilVault:CanActivate() and ( (nLastHarassUtility > botBrain.nVaultThreshold) or (nLastHarassUtility > botBrain.nVault2Threshold) )  then
 				local nRange = abilVault:GetRange() 
-				BotEcho("Vault Range".. nRange)
-				BotEcho("Distance from Target".. nTargetDistanceSq)
 				if nTargetDistanceSq <= ((nRange * nRange)) then
 					bActionTaken = core.OrderAbilityEntity(botBrain, abilVault, unitTarget)
+				else
+					if itemGhostMarchers and itemGhostMarchers:CanActivate() and not bStealth then 
+						bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemGhostMarchers)
+					end
+					bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
 				end
 			end
+			
 		end
 		
-		   if not bActionTaken then
+	if not bActionTaken then
 	if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Checking Illusive") end
         local abilIllusive = skills.abilQ
         if abilIllusive:CanActivate() and nLastHarassUtility > botBrain.nIllusiveThreshold  then
@@ -417,20 +496,76 @@ end
 object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 
+---------------------------------------------
+-- Retreat From Threat Override
+---------------------------------------------
+local function RetreatFromThreatExecuteOverride(botBrain)
+	local bDebugEchos = true
+	local bActionTaken = false
+	
+	local nlastRetreatUtil = behaviorLib.lastRetreatUtil
+	
+	local unitSelf = core.unitSelf
+	core.FindItems()
+	
+	if bDebugEchos then BotEcho("Running - ".. nlastRetreatUtil) end
+	
+	--Activate battery if we can
+	local itemBattery = core.itemBattery
+	if not bActionTaken then
+		if itemBattery then
+			if itemBattery:CanActivate() and itemBattery:GetCharges() >= 10 and unitSelf:GetHealthPercent() < 0.8 then
+				if bDebugEchos then BotEcho("Running - Using Battery") end
+					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
+			end
+		end
+	end
+		
+	if not bActionTaken then
+		--Activate stealth if we can
+		local itemStealth = core.itemStealth
+		if bDebugEchos then BotEcho(behaviorLib.lastRetreatUtil.. "/- Stealth - /".. botBrain.nretreatStealthThreshold ) end
+		if nlastRetreatUtil >= botBrain.nretreatStealthThreshold and itemStealth and itemStealth:CanActivate() then
+			if bDebugEchos then BotEcho("Running - Attempting Stealth") end
+			bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemStealth)
+		end
+	end
+		
+	if not bActionTaken then
+		--Activate ghost marchers if we can
+		local itemGhostMarchers = core.itemGhostMarchers
+		if not (unitSelf:HasState("State_Item3G") or unitSelf:HasState("State_Sasuke")) then
+			if behaviorLib.lastRetreatUtil >= behaviorLib.retreatGhostMarchersThreshold and itemGhostMarchers and itemGhostMarchers:CanActivate() then
+				if bDebugEchos then BotEcho("Running - Using Ghost Marchers") end
+				bActionTaken = core.OrderItemClamp(botBrain, core.unitSelf, itemGhostMarchers)
+			end
+		end
+	end
+	
+	if not bActionTaken then
+		return object.RetreatFromThreatExecuteOld(botBrain)
+	end 
+	
+end
+
+-- override the behaviour
+object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatBehavior["Execute"]
+behaviorLib.RetreatFromThreatBehavior["Execute"] = RetreatFromThreatExecuteOverride
+
 ----------------------------------
 --  FindItems Override
 ----------------------------------
 local function funcFindItemsOverride(botBrain)
 	local bUpdated = object.FindItemsOld(botBrain)
 
-	if core.Stealth ~= nil and not core.itemStealth:IsValid() then
-		core.Stealth = nil
+	if core.itemStealth ~= nil and not core.itemStealth:IsValid() then
+		core.itemStealth = nil
 	end
-	if core.Illusion ~= nil and not core.itemIllusion:IsValid() then
-		core.Illusion = nil
+	if core.itemIllusion ~= nil and not core.itemIllusion:IsValid() then
+		core.itemIllusion = nil
 	end
-	if core.Battery ~= nil and not core.itemBattery:IsValid() then
-		core.Battery = nil
+	if core.itemBattery ~= nil and not core.itemBattery:IsValid() then
+		core.itemBattery = nil
 	end
 	
 	if bUpdated then

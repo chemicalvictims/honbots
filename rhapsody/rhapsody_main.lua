@@ -9,9 +9,9 @@
 --																 --
 -------------------------------------------------------------------
 ------------------------------------------------------------------- 
--- Rhapbot v0.3
--- Based on Skelbot and Scorcher
--- I need help with this
+-- Rhapbot v0.5
+-- Based on Scorcher, Demented Shaman, Glacius and so on.
+-- 
 --
 
 --####################################################################
@@ -103,9 +103,9 @@ object.tSkills = {
 }
 
 -- These are bonus agression points if a skill/item is available for use
-object.nabilQUp = 39
-object.nabilWUp = 49
-object.nabilEUp = 1
+object.nabilQUp = 59
+object.nabilWUp = 69
+object.nabilEUp = 5
 
 
 -- These are bonus agression points that are applied to the bot upon successfully using a skill/item
@@ -168,7 +168,7 @@ end
 function object:onthinkOverride(tGameVariables)
     self:onthinkOld(tGameVariables)
 
-    -- custom code here
+    -- nothing to see here
 end
 object.onthinkOld = object.onthink
 object.onthink 	= object.onthinkOverride
@@ -206,15 +206,7 @@ end
 object.oncombateventOld = object.oncombatevent
 object.oncombatevent     = object.oncombateventOverride
 
---[[function HealAtWellExecuteOverride(botBrain)
-	
-	--to do: attempt to use staccato during 'b phase'
-	--only if an enemy hero is in range, no getting close to him
-	
-	
-	
-end	
-behaviorLib.HealAtWellExecute = HealAtWellExecuteOverride--]]
+
 ------------------------------------------------------
 --            customharassutility override          --
 -- change utility according to usable spells here   --
@@ -266,8 +258,8 @@ local function HarassHeroExecuteOverride(botBrain)
     local bActionTaken = false
     local bTargetVuln = unitTarget:IsStunned() or unitTarget:IsImmobilized()
 	local bDanceSuccess = false
-    
-    --- Insert abilities code here, set bActionTaken to true 
+    local nTime = 0
+   
 	local abilStun = skills.abilQ
 	local abilDance = skills.abilW
 	
@@ -276,9 +268,10 @@ local function HarassHeroExecuteOverride(botBrain)
 	if core.CanSeeUnit(botBrain, unitTarget) then
 		if not bActionTaken then --and bTargetVuln then
             if abilStun:CanActivate() and nLastHarassUtility > botBrain.nabilQThreshold and not unitSelf:HasState("State_Rhapsody_Ability1_Self") then
-                local nRange = abilStun:GetRange()
+                local nRange = abilStun:GetRange()												-- state_rhapsody_ability1_self means that rhapsody has staccato charges
                 if nTargetDistanceSq < (nRange * nRange) then
                     bActionTaken = core.OrderAbilityEntity(botBrain, abilStun, unitTarget)
+					nTime = HoN.GetGameTime()			--the moment in the game that rhapsody used the orginal stun (used for staccato stagger)
                 else
                     bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
 					
@@ -298,14 +291,15 @@ local function HarassHeroExecuteOverride(botBrain)
 			end
 		end
 	end
-	
+	----------------------------------------------------- Staccato charges stagger
+	local nStaccatoChargeThreshold = 250 --the stagger interval in ms
     if not bActionTaken then
-		if unitSelf:HasState("State_Rhapsody_Ability1_Self") then 				
-								repeat
-								core.OrderAbility(botBrain, abilStun)
-								BotEcho('did it master')
-								TIME_Sleep(1000)
-								until not unitSelf:HasState("State_Rhapsody_Ability1_Self") 
+		if unitSelf:HasState("State_Rhapsody_Ability1_Self") and not bTargetVuln then 
+			local nCurTime = HoN.GetGameTime()
+			if nCurTime - nTime >= nStaccatoChargeThreshold then --if current time 250ms after last stun, do another stun!
+				core.OrderAbility(botBrain, abilStun)
+				nTime = nCurTime
+			end
 		end  	  
 	end
  
@@ -367,6 +361,7 @@ core.FindItems = funcFindItemsOverride
 --	
 --	Utility: 
 --	Execute: Use Astrolabe / Protective Melody
+--  The following few functions are a necesary copy pasta (with adaptaions for rhapsody's skills, ofc)
 ----------------------------------
 behaviorLib.nHealUtilityMul = 0.8
 behaviorLib.nHealHealthUtilityMul = 1.0
@@ -527,8 +522,6 @@ function behaviorLib.HealExecute(botBrain)
 		return
 	end
 	
-	
-	
 	if unitHealTarget then 
 		if nHealTimeToLive <= nUltimateTTL and abilMelody:CanActivate() and unitHealTarget ~= unitSelf  then  --only attempt ult for other players (not for self, lol)
 			ProtectiveMelodyExecute(botBrain)
@@ -622,44 +615,90 @@ function ProtectiveMelodyExecute(botBrain)
 	end
 end
 
-	--[[function ProtectiveMelodyExecute2(botBrain)  --from Djulio
-		-- Using the groupCenter to fetch the center of the allied heroes, with min 1 ally
-		local vAlliesCenter = groupCenter(core.localUnits["AllyHeroes"], 1)
-     
-		if vAlliesCenter == nil then
-			return false
-		end
-     
-        -- Fetching the ability and its range
-			BotEcho ('im here!')
-			local abilUlt = skills.abilR
-			local nUltRange = abilUlt:GetRange()
-			local nHalfUltRangeSqt = nUltRange * nUltRange * 0.25
-			local nUltLevel = abilUlt:GetLevel()
-			-- Defining threshold for ult depending on its level
-			local nUltimateTimeToLiveThreshold = 4
-			if nUltLevel == 2 then
-				nUltimateTimeToLiveThreshold = 5
-			elseif nUltLevel == 3 then
-				nUltimateTimeToLiveThreshold = 6
-			end
- 
- 
-			-- Get the general TimeToLiveUtilityFn bevahior
-			local nTimeToLive = behaviorLib.TimeToLiveUtilityFn(hero)
-			-- Distance between bot and the center of the group
-			local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, vAlliesCenter)
-			
-				BotEcho ('checking ultttttttttttttttttttttttttttttttttttttt')
-				if nTimeToLive <= nUltimateTimeToLiveThreshold and abilUlt:CanActivate() then
-					if nTargetDistanceSq <= nHalfRadiusSq then
-						core.OrderAbility(botBrain, abilUlt)
-					else
-						core.OrderMoveToUnit(botBrain, unitSelf, vAlliesCenter)
+----------------------------------
+--  RetreatFromThreat Override EXPERIMENTAL
+--  to do: add %hp to the mix?
+----------------------------------
+object.nRetreatStunThreshold = 45
+
+--Unfortunately this utility is kind of volatile, so we basically have to deal with util spikes
+function funcRetreatFromThreatExecuteOverride(botBrain)
+	local bDebugEchos = false
+	local bActionTaken = false
+	local nTime = 0
+	local nStaccatoChargeThreshold = 250 --ms
+	
+	--if bDebugEchos then BotEcho("Checkin defensive Stun") end
+	if not bActionTaken then
+		--Stun use
+		local abilStun = skills.abilQ
+		if abilStun:CanActivate() then
+			BotEcho("CanActivate!  nRetreatUtil: "..behaviorLib.lastRetreatUtil.."  thresh: "..object.nRetreatStunThreshold)
+			if behaviorLib.lastRetreatUtil >= object.nRetreatStunThreshold then
+				local tTargets = core.CopyTable(core.localUnits["EnemyHeroes"])
+				if tTargets then
+					local vecMyPosition = unitSelf:GetPosition() 
+					local nRange = abilStun:GetRange()					
+					for key, hero in pairs(tTargets) do
+						local heroPos = hero:GetPosition()
+						local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, heroPos)
+						if nTargetDistanceSq < (nRange * nRange) and abilStun:CanActivate() then
+							core.OrderAbilityEntity(botBrain, abilStun, hero) -- will only attempt to stun if he is in range, no turning back!
+							nTime = HoN.GetGameTime()
+						end
+
 					end
-				end 
+				end	
+			end
+		end
 	end
---]]
+	--Staccato charges stagger
+	if not bActionTaken then
+		if unitSelf:HasState("State_Rhapsody_Ability1_Self") and not bTargetVuln then 
+			local nCurTime = HoN.GetGameTime()
+			if nCurTime - nTime >= nStaccatoChargeThreshold then --if current time 250ms after last stun, do another stun!
+				core.OrderAbility(botBrain, abilStun)
+				nTime = nCurTime
+			end
+		end  	  
+	end
+	
+
+	if not bActionTaken then
+		return object.RetreatFromThreatExecuteOld(botBrain)
+	end
+end
+
+
+--[[function HealAtWellExecuteOverride(botBrain)
+	
+	--to do: attempt to use staccato during 'b phase'
+	--only if an enemy hero is in range, no getting close to him
+	--won't release charges because we're too frightened (to code it)
+	--realised this isn't realistic, at least not versus other bots
+	
+	BotEcho ('im here boss')
+	local vecMyPosition = unitSelf:GetPosition() 
+	--local curHP = unitSelf:Get
+	local abilStun = skills.abilQ
+	local nRange = abilStun:GetRange()
+	local tTargets = core.CopyTable(core.localUnits["EnemyHeroes"])
+	if tTargets then
+		for key, hero in pairs(tTargets) do
+			local heroPos = hero:GetPosition()
+			local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, heroPos)
+			if nTargetDistanceSq < (nRange * nRange) and abilStun:CanActivate() then
+				core.OrderAbilityEntity(botBrain, abilStun, hero)
+			end
+
+		end
+	end	
+end	
+behaviorLib.HealAtWellExecute = HealAtWellExecuteOverride--]]
+
+
+object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
+behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
 local nRadiuss = object.GetProtectiveMelodyRadius()
 BotEcho ('success'..nRadiuss )
 
