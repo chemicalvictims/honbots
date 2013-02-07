@@ -1,15 +1,15 @@
--------------------------------------------------------------------
--------------------------------------------------------------------
--- 	 ____	 _		 _____   _____   _____     ____    ________  --
---	|    \	| |		/	  \ /     \ |	  \   /	   \  |  _  _  | --
---  | Ѻ _|	| |___  |  Ѻ  | |  Ѻ  | |  ѻ__/	 |   _  | |__    __| --
---	|   \	|  _  \ |  _  | |  ___/ 3      \ |  (Ѻ) |    |  |    --
---  | |\ \	| |	| | | | | | | | 	|  Ѻ   | |	 ¯ 	|    |  |	 --
---  |_| \_\ |_| |_| |_| |_| |_,     |______,  \____,     |__|	 --
---																 --
--------------------------------------------------------------------
-------------------------------------------------------------------- 
--- Rhapbot v0.6
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- 	 ____	 _		 _____   _____   _____     ____    ________  -----
+--	|    \	| |		/	  \ /     \ |	  \   /	   \  |  _  _  | -----
+--  | Ѻ _|	| |___  |  Ѻ  | |  Ѻ  | |  ѻ__/	 |   _  | |__    __| -----
+--	|   \	|  _  \ |  _  | |  ___/ 3      \ |  (Ѻ) |    |  |    -----
+--  | |\ \	| |	| | | | | | | | 	|  Ѻ   | |	 ¯ 	|    |  |	 -----
+--  |_| \_\ |_| |_| |_| |_| |_,     |______,  \____,     |__|	 -----
+--																 -----
+----------------------------------------------------------------------
+----------------------------------------------------------------------
+-- Rhapbot v0.7
 -- Based on Scorcher, Demented Shaman, Glacius and so on.
 -- I think i stole stuff from most of the s2 bots to make this
 -- Flint, Ra, Hammer... and so on
@@ -108,6 +108,7 @@ object.nabilWUp = 69
 object.nabilEUp = 5
 
 
+
 -- These are bonus agression points that are applied to the bot upon successfully using a skill/item
 object.nabilQUse = 15
 object.nabilWUse = 15
@@ -117,9 +118,8 @@ object.nabilWUse = 15
 --These are thresholds of aggression the bot must reach to use these abilities
 object.nabilQThreshold = 20
 object.nabilWThreshold = 40
-
-
-
+object.MoMThreshold = 70 --i don't want my bot to get extra aggresive if she has this item, just use it
+						 --if situation is aggresive enough
 
 
 --####################################################################
@@ -298,7 +298,14 @@ local function HarassHeroExecuteOverride(botBrain)
 			end
 		end  	  
 	end
- 
+	----------------------------------------------------- Elder Parasite usage
+	if not bActionTaken then
+		core.FindItems()
+		local itemMoM = core.itemMoM
+		if itemMoM and itemMoM:CanActivate() and nLastHarassUtility > botBrain.MoMThreshold then
+			core.OrderItem (itemMoM)
+		end
+	end
 	
 	if not bActionTaken then
         return object.harassExecuteOld(botBrain)
@@ -309,14 +316,11 @@ local function HarassHeroExecuteOverride(botBrain)
     return
     end
 end
-
-
--- overload the behaviour stock function with custom 
 object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 
 
--- find items override ------------------------------
+-- find items override --------------------------------------
 local function funcFindItemsOverride(botBrain)
 	local bUpdated = object.FindItemsOld(botBrain)
 
@@ -326,10 +330,15 @@ local function funcFindItemsOverride(botBrain)
 	if core.itemWard ~= nil and not core.itemWard:IsValid() then
 		core.itemWard = nil
 	end
-
+	if core.itemBkB ~= nil and not core.itemBkB:IsValid() then
+		core.itemBkB = nil
+	end
+	if core.itemMoM ~= nil and not core.itemMoM:IsValid() then
+		core.itemMoM = nil
+	end
+	
 	if bUpdated then
-		--only update if we need to
-		if core.itemWard and core.itemAstrolabe then
+		if core.itemWard and core.itemAstrolabe and core.itemMoM and core.itemBkB then
 			return
 		end
 
@@ -344,7 +353,12 @@ local function funcFindItemsOverride(botBrain)
 					--Echo("Saving astrolabe")
 				elseif core.itemWard == nil and curItem:GetName() == "Item_FlamingEye" then
 					core.itemWard = core.WrapInTable(curItem)
-					core.itemWard.nRadius = 400
+					core.itemWard.nRadius = 500
+				elseif core.itemBkB == nil and curItem:GetName() == "Item_Immunity" then
+					core.itemBkB = core.WrapInTable(curItem)
+				elseif core.itemMoM == nil and curItem:GetName() == "Item_ElderParasite" then
+					core.itemMoM = core.WrapInTable(curItem)
+					
 				end
 			end
 		end
@@ -578,7 +592,7 @@ end
 -------------------------------------Ultimate Execution 
 -------------------------------------Rhapsody's ult can be activated for just 1 teammate
 -------------------------------------but she will attemt to move to center of group before popping
-													
+-------------------------------------Also pops Shrunken, if available
 function ProtectiveMelodyExecute(botBrain)
 	local unitSelf = core.unitSelf
 	local tTargets = core.CopyTable(core.localUnits["AllyHeroes"]) --re do
@@ -597,6 +611,11 @@ function ProtectiveMelodyExecute(botBrain)
 			local nRadius = object.GetProtectiveMelodyRadius()
 			local nHalfRadiusSq = nRadius * nRadius * 0.25
 			if nTargetDistanceSq <= nHalfRadiusSq then
+				core.FindItems()
+				local itemBkB = core.itemBkB
+				if itemBkB and itemBkB:CanActivate() then		--see if Shrunken can pop, then pop it
+					core.OrderItem(itemBkB)
+				end
 				core.OrderAbility(botBrain, abilUlt)		
 			else 
 				core.OrderMoveToUnit(botBrain, unitSelf, vAlliesCenter)
@@ -621,12 +640,12 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 	local nTime = 0
 	local nStaccatoChargeThreshold = 250 --ms
 	local unitSelf = core.unitSelf
-	
+	local abilStun = skills.abilQ
 	--if bDebugEchos then BotEcho("Checkin defensive Stun") end
 	if not bActionTaken then
 		--Stun use
-		local abilStun = skills.abilQ
-		if abilStun:CanActivate() then
+		
+		if abilStun:CanActivate() and not unitSelf:HasState("State_Rhapsody_Ability1_Self") then
 			BotEcho("CanActivate!  nRetreatUtil: "..behaviorLib.lastRetreatUtil.."  thresh: "..object.nRetreatStunThreshold)
 			if behaviorLib.lastRetreatUtil >= object.nRetreatStunThreshold then
 				local tTargets = core.CopyTable(core.localUnits["EnemyHeroes"])
@@ -662,35 +681,6 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 		return object.RetreatFromThreatExecuteOld(botBrain)
 	end
 end
-
-
---[[function HealAtWellExecuteOverride(botBrain)
-	
-	--to do: attempt to use staccato during 'b phase'
-	--only if an enemy hero is in range, no getting close to him
-	--won't release charges because we're too frightened (to code it)
-	--realised this isn't realistic, at least not versus other bots
-	
-	BotEcho ('im here boss')
-	local vecMyPosition = unitSelf:GetPosition() 
-	--local curHP = unitSelf:Get
-	local abilStun = skills.abilQ
-	local nRange = abilStun:GetRange()
-	local tTargets = core.CopyTable(core.localUnits["EnemyHeroes"])
-	if tTargets then
-		for key, hero in pairs(tTargets) do
-			local heroPos = hero:GetPosition()
-			local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, heroPos)
-			if nTargetDistanceSq < (nRange * nRange) and abilStun:CanActivate() then
-				core.OrderAbilityEntity(botBrain, abilStun, hero)
-			end
-
-		end
-	end	
-end	
-behaviorLib.HealAtWellExecute = HealAtWellExecuteOverride--]]
-
-
 object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
 behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
 
@@ -714,12 +704,12 @@ function behaviorLib.WardUtility(botBrain)
 	if itemWard and nTime > 120000 then 				--past the 2min mark, we can start placing wards
 														--This is the method i devised to check if there is a ward in said spot.
 		if not HoN.CanSeePosition(vecWardSpot1) then 	--Normally, you would not have vision in the classic ward spots unless wards are placed there
-			nUtility = nUtility + 10					--Please note that this method may not work for all wardspots 
-			--BotEcho('cant see 2')						--and tbh i can't figure out a different method
+			nUtility = nUtility + 50					--Please note that this method may not work for all wardspots 
+			--BotEcho('cant see 1')						--and tbh i can't figure out a different method
 		end
 				
 		if not HoN.CanSeePosition(vecWardSpot2) then
-			nUtility = nUtility + 10					--the way theese thresholds are set, this function will either return a 10
+			nUtility = nUtility + 50					--the way theese thresholds are set, this function will either return a 10
 			--BotEcho('cant see 2')						--which means the bot probably won't go ward, or a 20
 		end												--much more likely the bot will ward :)
 				
@@ -733,20 +723,20 @@ function behaviorLib.WardExecute(botBrain)
 	local unitSelf = core.unitSelf
 	local itemWard = core.itemWard
 	local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)
-	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)	
+	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)
 	local vecWardCommit = vecWardSpot2		--commit to this ward spot
-	--local nDistCommit
+	local nDistCommit
 	if itemWard then
 		local nDistance1Sq = Vector3.Distance2DSq(unitSelf:GetPosition(), vecWardSpot1)
 		local nDistance2Sq = Vector3.Distance2DSq(unitSelf:GetPosition(), vecWardSpot2)
-		--nDistCommit = nDistance2Sq
+		nDistCommit = nDistance2Sq
 		if nDistance1Sq < nDistance2Sq then 
 			vecWardCommit = vecWardSpot1			--if the other ward spot is closer, commit to that ward spot
-			--nDistCommit = nDistance1Sq
+			nDistCommit = nDistance1Sq
 		end
 		
-		if ( nDistance1Sq or nDistance2Sq ) < (itemWard.nRadius * itemWard.nRadius) then
-			core.OrderItemPosition (botBrain, unitSelf, itemWard, vecWardSpot1)
+		if nDistCommit < (itemWard.nRadius * itemWard.nRadius) then
+			core.OrderItemPosition (botBrain, unitSelf, itemWard, vecWardCommit)
 		else
 			core.OrderMoveToPosClamp(botBrain, unitSelf, vecWardCommit, false)
 		end
@@ -756,13 +746,42 @@ function behaviorLib.WardExecute(botBrain)
 	
 	return true
 end
-
-behaviorLib.WardBehavior = {}										--adding the ward behavior to the behaviors table
+--adding the ward behavior to the behaviors table
+behaviorLib.WardBehavior = {}										
 behaviorLib.WardBehavior["Utility"] = behaviorLib.WardUtility
 behaviorLib.WardBehavior["Execute"] = behaviorLib.WardExecute
 behaviorLib.WardBehavior["Name"] = "Ward"
 tinsert(behaviorLib.tBehaviors, behaviorLib.WardBehavior)
 
+--[[local function AbilityPush()
+	local bSuccess = false
+	local abilDance = skills.abilW
+	local vCreepCenter = groupCenter(core.localUnits["EnemyCreeps"], 3) -- the 3 basicly wont allow abilities under 3 creeps
+	if vCreepCenter then 
+		BotEcho ('vCreepCenter')
+	end
+	if abilDance:CanActivate() and vCreepCenter then 
+	core.OrderAbilityPosition(botBrain, abilDance, vCreepCenter)
+		bSuccess = true
+	end
+	return bSuccess
+end
 
+local function PushExecuteOverride(botBrain)
+	if not AbilityPush(botBrain) then 
+		object.PushExecuteOld(botBrain)
+	end
+
+end
+object.PushExecuteOld = behaviorLib.PushBehavior["Execute"]
+behaviorLib.PushBehavior["Execute"] = PushExecuteOverride
+
+
+local function TeamGroupBehaviorOverride(botBrain)
+	object.TeamGroupBehaviorOld(botBrain)
+	AbilityPush(botBrain)
+end
+object.TeamGroupBehaviorOld = behaviorLib.TeamGroupBehavior["Execute"]
+behaviorLib.TeamGroupBehavior["Execute"] = TeamGroupBehaviorOverride
+--]]
 BotEcho ('success')
-

@@ -1,32 +1,39 @@
 
--- EngiBot v 1.01
+-- EngiBot v 1.02
 -- Built by V1P3R`
 -- This Bot has been designed to be an aggressive early game harasser, and transition
 -- into a powerful team presence bot. 
 --
 --
 -- How the skills work
+
 -- EngiBot is fairly accurate with his Keg stuns and enjoys pressuring heroes from 
 -- a very early stage. This allows the laning bot or player to follow up with another
 -- stun or ability in order to finish the enemy.
--- Along with Keg stuns, EngiBot will place the turret positioned "at the feet" or 
--- "directly below" the enemy unit. Immediately after, EngiBot will follow up with
--- a Keg Stun.
--- If possible, EngiBot will then move into position, and use his Energy Field in order
--- to maximize damage.
+-- When retreating, EngiBot will toss a Keg to halt the enemies chasing.
+
+-- Along with Keg stuns, EngiBot will attempt to place the turret. 
+-- positioned "at the feet" or "next to" the enemy unit. 
+-- Immediately after, EngiBot will follow up with a Keg Stun.
+-- When retreating, EngiBot will deploy a Steam Turret to slow down the opposition.
+-- If possible, EngiBot will then move into position, and use his Energy Field in 
+-- order to maximize damage.
+
 -- Spider Mines are now implemented. When in range, EngiBot will drop a spider mine.
 -- Additionally, after landing a Keg stun, EngiBot will attempt to move into range and 
--- drop a spider mine resulting in a more efficient combination
+-- drop a spider mine resulting in a more efficient combination.
+-- When retreating, EngiBot will plant Spider Mines for a nasty surprise
+-- on enemies who dare chase him.
 
 -- EngiBot is still a work in progress and I am always looking to implement new 
 -- features and ideas. Please report any ideas or comments,
 -- as well as issues to me via PM or email at nlagueruela@yahoo.com.
 
--- Upcoming impelementations
--- Spider Mine tweak (Specifically dropping mines while retreating to base 
--- and if being pursued 
+-- Upcoming impelementations 
+-- More Turret tinkering to maximize efficiency.
+-- Code Clean Up
+-- Other stuff wandering in my head
 -- Portal Key initiation
--- Smarter vector targetting for turret (based on hero position)
 
 local _G = getfenv(0)
 local object = _G.object
@@ -129,7 +136,7 @@ object.nSheepstickUp = 12
 object.nPortalKeyUp = 40
 
 -- These are bonus agression points that are applied to the bot upon successfully using a skill or item
-object.nKegUseBonus = 22
+object.nKegUseBonus = 20
 object.nTurretUseBonus = 20
 object.nEnergyFieldUseBonus = 60
 object.nSpiderMineUseBonus = 50
@@ -137,12 +144,51 @@ object.nSheepstickUse = 16
 object.nPortalKeyUse = 50
 
 -- These are thresholds of aggression the bot must reach to use these abilities
-object.nKegThreshold = 22
+object.nKegThreshold = 25
 object.nTurretThreshold = 25
 object.nEnergyFieldThreshold = 30
 object.nSpiderMineThreshold = 30
 object.nSheepstickThreshold = 30
 object.nPortalKeyThreshold = 20
+
+
+-- Chat Functions
+
+object.killMessages = {}
+object.killMessages.General = {
+	"You thought you had a chance? I did the math.","I think you forget, I am good with calculation.","Heimerdinger has got nothing on me.",
+	"In my spare time I determine NP-Problems to actually be P-Problems.", "I used to go by the name Morris Brocail, but now I work on safer projects." ,
+	"That was easier than solving problems with quadratic air resistance", "Something more challenging please, it's like I am proving the uncertainty principle.", 
+	"That was about as simple as understanding the time-dependent Schrödinger equation."
+	}
+
+local function ProcessKillChatOverride(unitTarget, sTargetPlayerName)
+    local nCurrentTime = HoN.GetGameTime()
+    if nCurrentTime < core.nNextChatEventTime then
+        return
+    end   
+     
+    local nToSpamOrNotToSpam = random()
+         
+    if(nToSpamOrNotToSpam < core.nKillChatChance) then
+        local nDelay = random(core.nChatDelayMin, core.nChatDelayMax) 
+        local tHeroMessages = object.killMessages[unitTarget:GetTypeName()]
+	
+	local sTargetName = sTargetPlayerName or unitTarget:GetDisplayName()
+        if tHeroMessages ~= nil and random() <= 0.7 then
+            local nMessage = random(#tHeroMessages)
+            core.AllChat(format(tHeroMessages[nMessage], sTargetPlayerName), nDelay)
+        else
+            local nMessage = random(#object.killMessages.General) 
+            core.AllChat(format(object.killMessages.General[nMessage], sTargetPlayerName), nDelay)
+        end
+    end
+     
+    core.nNextChatEventTime = nCurrentTime + core.nChatEventInterval
+end
+core.ProcessKillChat = ProcessKillChatOverride 
+
+-- Skill function
 
 local function AbilitiesUpUtilityFn()
 	local nUtility = 0
@@ -258,6 +304,8 @@ local function HarassHeroExecuteOverride(botBrain)
 	local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, vecTargetPosition)
 	local bTargetRooted = unitTarget:IsStunned() or unitTarget:IsImmobilized() or unitTarget:GetMoveSpeed() < 200
 	
+	local targetHealthPercentage = unitTarget:GetHealthPercent()
+	
 	local nLastHarassUtil = behaviorLib.lastHarassUtil
 	local bCanSee = core.CanSeeUnit(botBrain, unitTarget)	
 	
@@ -284,41 +332,8 @@ local function HarassHeroExecuteOverride(botBrain)
 				end
 			end
 		--]]
-	--end
-		--Turret using Vector targetting. Working
-		if not bActionTaken and nLastHarassUtil > botBrain.nTurretThreshold and bCanSee then
-			if bDebugEchos then BotEcho("  No action yet, checking Turret") end
-			local abilTurret = skills.abilTurret
-			--Check if turret is available, and which team EngiBot is on.
-			if abilTurret:CanActivate() and core.myTeam == HoN.GetHellbourneTeam() then
-				botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(targetPosition.x+100, targetPosition.y+100), targetPosition)
-				bActionTaken = true
-			elseif abilTurret:CanActivate() then
-				botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(targetPosition.x-100, targetPosition.y-100), targetPosition)
-				bActionTaken = true
-			end
-			object.UseTurret = false
-		end
-		--]]
-		--[[ Another turret variation. Not working
-		if not bActionTaken and nLastHarassUtil > botBrain.nTurretThreshold then
-			if bDebugEchos then BotEcho("  No action yet, checking Turret") end
-			local abilTurret = skills.abilTurret
-			if abilTurret:CanActivate() then
-				local abilTurret = skills.abilTurret
-				local nRadius = botBrain.GetTurretRadius()
-				local nRange = skills.abilTurret and skills.abilTurret:GetRange() or nil
-				local vecTarget = core.AoETargeting(unitSelf, nRange, nRadius, true, unitTarget, core.enemyTeam, nil)
-				
-				if vecTarget then
-					bActionTaken = core.OrderAbilityPosition(botBrain, abilTurret, vecTarget)
-				end
-			end
-		end
-		--]]
 	end
-	
-	-- Keg code similar to Glacius tundra blast
+	--end-- Keg code similar to Glacius tundra blast
 	if not bActionTaken and nLastHarassUtil > botBrain.nKegThreshold then
 		if bDebugEchos then BotEcho("  No action yet, checking Keg") end
 		local abilKeg = skills.abilKeg
@@ -331,6 +346,31 @@ local function HarassHeroExecuteOverride(botBrain)
 			if vecTarget then
 				bActionTaken = core.OrderAbilityPosition(botBrain, abilKeg, vecTarget)
 			end
+		end
+	
+		--Turret using Vector targetting.
+		if not bActionTaken and nLastHarassUtil > botBrain.nTurretThreshold and bCanSee then
+			if bDebugEchos then BotEcho("  No action yet, checking Turret") end
+			local abilTurret = skills.abilTurret
+			--Check if turret is available, and which team EngiBot is on.
+			if abilTurret:CanActivate() and core.myTeam == HoN.GetHellbourneTeam() then
+				if targetHealthPercentage <= .4 then
+					botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(targetPosition.x, targetPosition.y), targetPosition)
+					bActionTaken = true
+				else
+					botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(targetPosition.x-250, targetPosition.y-250), targetPosition)
+					bActionTaken = true
+				end
+			elseif abilTurret:CanActivate() then
+				if targetHealthPercentage <= .4 then
+					botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(targetPosition.x, targetPosition.y), targetPosition)
+					bActionTaken = true
+				else
+					botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(targetPosition.x+250, targetPosition.y+250), targetPosition)
+					bAtcionTaken = true
+				end
+			end
+			object.UseTurret = false
 		end
 	end
 	--[[
@@ -382,7 +422,7 @@ local function HarassHeroExecuteOverride(botBrain)
 	--]]
 	-- Energy Field similar to Glacius ultimate code
 		if not bActionTaken and nLastHarassUtil > botBrain.nEnergyFieldThreshold then
-			if bDebugEchos then BotEcho("  No action yet, checking Energy Field.") end
+			if bDebugEchos then BotEcho("No action yet, checking Energy Field.") end
 			local abilEnergyField = skills.abilEnergyField
 			if abilEnergyField:CanActivate() then
 			--get the target well within the radius for maximum effect
@@ -398,8 +438,9 @@ local function HarassHeroExecuteOverride(botBrain)
 			end
 		end
 		
+		-- Spider Mine detection similar to Energy Field code.
 		if not bActionTaken and nLastHarassUtil > botBrain.nSpiderMineThreshold then
-			if bDebugEchos then BotEcho("  No action yet, checking Energy Field.") end
+			if bDebugEchos then BotEcho("  No action yet, checking Spider Mine.") end
 			local abilSpiderMine = skills.abilSpiderMine
 			if abilSpiderMine:CanActivate() then
 			--get the target well within the radius for maximum effect
@@ -417,14 +458,13 @@ local function HarassHeroExecuteOverride(botBrain)
 	
 		
 	if not bActionTaken then
-		if bDebugEchos then BotEcho("  No action yet, proceeding with normal harass execute.") end
+		if bDebugEchos then BotEcho("No action yet, proceeding with normal harass execute.") end
 		return object.harassExecuteOld(botBrain)
 	end
 end
 object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
-
-
+	
 ----------------------------------
 --  FindItems Override
 ----------------------------------
@@ -467,6 +507,81 @@ local function funcFindItemsOverride(botBrain)
 end
 object.FindItemsOld = core.FindItems
 core.FindItems = funcFindItemsOverride
+
+----------------------------------
+-- Retreating tactics as seen in Spennerino's ScoutBot 
+-- with variations from Rheged's Emerald Warden Bot
+----------------------------------
+object.nRetreatKegThreshold = 5
+object.nRetreatSpiderMineThreshold = 10
+object.nRetreatTurretThreshold = 5
+
+
+function funcRetreatFromThreatExecuteOverride(botBrain)
+	local bDebugEchos = true
+	local bActionTaken = false
+	local unitSelf = core.unitSelf
+	local unitTarget = behaviorLib.heroTarget
+	--local targetPosition = unitTarget:GetPosition()
+	local vecMyPosition = unitSelf:GetPosition()
+	
+	local nlastRetreatUtil = behaviorLib.lastRetreatUtil
+	
+	local tEnemies = core.localUnits["EnemyHeroes"]
+	local nCount = 0
+	
+	
+	for id, unitEnemy in pairs(tEnemies) do
+		if core.CanSeeUnit(botBrain, unitEnemy) then
+			nCount = nCount + 1
+		end
+	end
+	
+	
+	if unitSelf:GetHealthPercent() < .5 then
+		if nCount > 0 then
+			--When retreating, will Keg to push them back
+			if not bActionTaken then
+				local abilKeg = skills.abilKeg
+		
+				if behaviorLib.lastRetreatUtil >= object.nRetreatKegThreshold and abilKeg:CanActivate() then
+					if bDebugEchos then BotEcho("----Backing...Tossing Keg----") end
+					bActionTaken = core.OrderAbilityPosition(botBrain, abilKeg, vecMyPosition)
+				end
+			end
+		
+		-- When retreating, will deploy a turret in front of him facing the opposite direction to slow enemies down.
+			if not bActionTaken then
+				local abilTurret = skills.abilTurret
+				if behaviorLib.lastRetreatUtil >= object.nRetreatTurretThreshold and abilTurret:CanActivate() and core.myTeam == HoN.GetHellbourneTeam() then
+					if bDebugEchos then BotEcho ("----Backing...Depolying Turret----") end
+					botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(vecMyPosition.x+200, vecMyPosition.y+200), vecMyPosition)
+				elseif behaviorLib.lastRetreatUtil >= object.nRetreatTurretThreshold and abilTurret:CanActivate() then
+					if bDebugEchos then BotEcho ("----Backing...Deploying Turret----") end
+					botBrain:OrderAbilityVector(skills.abilTurret, Vector3.Create(vecMyPosition.x-200, vecMyPosition.y-200), vecMyPosition)
+				end
+			end
+			
+			-- When retreating, will plant Spider Mines to cap some kills on enemies chasing.
+			if not bActionTaken then
+				local abilSpiderMine = skills.abilSpiderMine
+				if behaviorLib.lastRetreatUtil >= object.nRetreatSpiderMineThreshold and abilSpiderMine:CanActivate() then
+					if bDebugEchos then BotEcho("----Backing...Planting Mine----") end
+					bActionTaken = core.OrderAbility(botBrain, abilSpiderMine)
+					--return object.RetreatFromThreatExecuteOld(botBrain)
+				end
+			end
+		end
+	end
+		
+		
+	if not bActionTaken then
+		return object.RetreatFromThreatExecuteOld(botBrain)
+	end
+	
+end
+object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
+behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
 -----------------------------------------------
 --  DJulio's Ring of Sorcery Implementation
 --  
