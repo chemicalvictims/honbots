@@ -129,6 +129,7 @@ object.nVault2Threshold = 80
 object.nSlamThreshold = 100
 object.nStealthThreshold = 30
 object.nIllusionThreshold = 30
+object.nTauntThreshold = 50
 
 --retreat thresholds
 
@@ -159,6 +160,12 @@ object.killMessages.Hero_Chronos = {
 object.killMessages.Hero_Defiler = {
 	"Ugh, get your slimy hands off me", "From what rock did you crawl out under from?"
 	}
+object.killMessages.Hero_Engineer = {
+	"What the hell are you mumbling about!?", "What a waste of a good drink", "Your turret's your best friend? Forever alone much?", "Get a life basement dweller!"
+	}
+object.killMessages.Hero_Kunas = {
+	"Monkey beats ape anytime!", "Here, have a banana!", "You ain't no King Kong", "Too busy eating lice off your back?"
+	}
 object.killMessages.Hero_Shaman = {
 	"Wow you really must be demented to suck that much", "Keep the mask on, no one wants to see your ugly mug"
 	}
@@ -166,7 +173,7 @@ object.killMessages.Hero_MonkeyKing = {
 	"I won't lose to my own clone!", "The original is always the best!", "There is only one true Monkey King!" 
 	}
 object.killMessages.Hero_Frosty = {
-	"You don't tell me to chill!", "Let's break the ice shall we?"
+	"You don't tell me to chill!", "Let's break the ice shall we?", "Sorry pal, but I'm just cooler than you"
 	}
 object.killMessages.Hero_Gemini = {
 	"Play Dead! Oh wait, you're not playing?", "Never was a dog-person"
@@ -228,6 +235,7 @@ function object:SkillBuild()
         skills.abilE = unitSelf:GetAbility(2)
         skills.abilR = unitSelf:GetAbility(3)
         skills.abilAttributeBoost = unitSelf:GetAbility(4)
+	skills.abilT = unitSelf:GetAbility(8) -- Taunt
     end
     if unitSelf:GetAbilityPointsAvailable() <= 0 then
         return
@@ -277,6 +285,10 @@ function object:oncombateventOverride(EventData)
 		elseif EventData.InflictorName == "Ability_MonkeyKing3" then
 		    nAddBonus = nAddBonus + object.nSlamUse
 		end
+	elseif EventData.Type == "Item" then
+		if core.itemStealth ~= nil and EventData.SourceUnit == core.unitSelf:GetUniqueID() and EventData.InflictorName == core.itemStealth:GetName() then
+			addBonus = addBonus + self.nStealthUse
+		end
 	end
  
 	if nAddBonus > 0 then
@@ -288,13 +300,28 @@ end
 object.oncombateventOld = object.oncombatevent
 object.oncombatevent     = object.oncombateventOverride
 
+------------------------------
+--
+------------------------------
+function IsEnemyTowerNearby(unit)
+	local nTowerRange = 821.6
+	local vecMyPosition = unit:GetPosition() 
+	local tBuildings = HoN.GetUnitsInRadius(vecMyPosition, nTowerRange, core.UNIT_MASK_ALIVE + core.UNIT_MASK_BUILDING)
+	for key, unitBuilding in pairs(tBuildings) do
+		if unitBuilding:IsTower() and unitBuilding:GetCanAttack() and (unitBuilding:GetTeam()==unit:GetTeam())==false then
+			return true
+		end
+	end
+	
+	return false
+end
 ------------------------------------------------------
 -- Harass Values Based On Health   --
 ------------------------------------------------------
 local function HarassExtraBonus(hero)
 	local unitSelf = core.unitSelf
 	local nUtil = 0
-	local leashRange = 400
+	local aggroRange = 500
 	
 	local vecMyPosition = unitSelf:GetPosition() 
 	local nAttackRange = core.GetAbsoluteAttackRangeToUnit(unitSelf, hero)
@@ -320,17 +347,17 @@ local function HarassExtraBonus(hero)
 		end
 	elseif unitSelf:GetHealthPercent() <=0.50 then
 		if hero:GetHealthPercent() >=0.8 then
-			nUtil = -50
+			nUtil = -25
 		elseif hero:GetHealthPercent() >=0.5 then
 			nUtil = 0
 		else
-			nUtil = -50
+			nUtil = 25
 		end
 	elseif unitSelf:GetHealthPercent() <= 1 then
 		if hero:GetHealthPercent() <=0.5 then
-			nUtil = 40
+			nUtil = 50
 		elseif hero:GetHealthPercent() <=0.8 then
-			nUtil = 20
+			nUtil = 25
 		else
 			nUtil = 10
 		end
@@ -338,13 +365,13 @@ local function HarassExtraBonus(hero)
 	
 	-- Mana Related Bonus
 	
-	nUtil = nUtil + (unitSelf:GetManaPercent() * 20)
+	nUtil = nUtil + (unitSelf:GetManaPercent() * 50)
 	
 	-- Movement and Distance Related Bonus
 	
-	if (nTargetDistanceSq <= (leashRange * leashRange)) and (nMySpeed > nTargetSpeed) then
+	if (nTargetDistanceSq <= (aggroRange * aggroRange)) and (nMySpeed > nTargetSpeed) then
 		nUtil = nUtil + (nMySpeed - nTargetSpeed) + 10
-	elseif (nTargetDistanceSq > (leashRange * leashRange)) and (nMySpeed < nTargetSpeed) then
+	elseif (nTargetDistanceSq > (aggroRange * aggroRange)) and (nMySpeed < nTargetSpeed) then
 		--nUtil = -5000
 		nUtil = nUtil + (nMySpeed - nTargetSpeed) - 10
 	end
@@ -358,6 +385,17 @@ local function HarassExtraBonus(hero)
 	if unitSelf:IsSilenced() then
 		nUtil = nUtil - 10
 	end
+	
+	-- NearTower Modifiers
+	if IsEnemyTowerNearby(unitSelf) then
+		--BotEcho("Enemy Tower Nearby - Lowering Harass")
+		nUtil = nUtil + ( (unitSelf:GetHealthPercent() - hero:GetHealthPercent()) * 100 ) - 20
+	elseif IsEnemyTowerNearby(hero) then
+		--BotEcho("Ally Tower Nearby - Raising Harass")
+		nUtil = nUtil + ( (unitSelf:GetHealthPercent() - hero:GetHealthPercent()) * 100 ) + 20
+	end
+	
+		--BotEcho ("Bonus nUtil = ".. nUtil) 
 	
 	return nUtil
 end
@@ -393,6 +431,8 @@ local function CustomHarassUtilityFnOverride(hero)
     if object.itemIllusion and object.itemIllusion:CanActivate() then
         nUtil = nUtil + object.nIllusionUp
     end
+    
+    BotEcho ("Total nUtil = ".. nUtil) 
  
     return nUtil
 end
@@ -442,8 +482,15 @@ local function HarassHeroExecuteOverride(botBrain)
 	local itemIllusion = core.itemIllusion
 	local itemBattery = core.itemBattery
 	local itemGhostMarchers = core.itemGhostMarchers
+	local abilTaunt = skills.abilT
 	
 	--BotEcho("Attacking - ".. nLastHarassUtility)
+	
+		if unitTarget:GetHealthPercent()<0.15 and abilTaunt:CanActivate() then
+			if nTargetDistanceSq <= ( 300 * 300 ) and nLastHarassUtility > botBrain.nTauntThreshold then
+				bActionTaken = core.OrderAbilityEntity(botBrain, abilTaunt, unitTarget)
+			end
+		end
 		
 		if itemBattery then
 			if not bActionTaken then

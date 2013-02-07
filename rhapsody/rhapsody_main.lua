@@ -9,11 +9,11 @@
 --																 --
 -------------------------------------------------------------------
 ------------------------------------------------------------------- 
--- Rhapbot v0.5
+-- Rhapbot v0.6
 -- Based on Scorcher, Demented Shaman, Glacius and so on.
--- 
---
-
+-- I think i stole stuff from most of the s2 bots to make this
+-- Flint, Ra, Hammer... and so on
+-- Also i have a new respect for ASCII artists (a damn pain do the header here)
 --####################################################################
 --####################################################################
 --#                                                                 ##
@@ -87,10 +87,10 @@ object.heroName = 'Hero_Rhapsody'
 
 
 --   item buy order. internal names  
-behaviorLib.StartingItems  = {"Item_MinorTotem", "Item_MinorTotem", "Item_ManaPotion", "Item_RunesOfTheBlight"}
+behaviorLib.StartingItems  = {"Item_MinorTotem", "Item_MinorTotem", "Item_RunesOfTheBlight", "Item_FlamingEye"}
 behaviorLib.LaneItems  = {"Item_Marchers", "Item_Striders", "Item_Astrolabe"}
-behaviorLib.MidItems  = {"Item_HarkonsBlade", "Item_Immunity"}
-behaviorLib.LateItems  = {"Item_ElderParasite", "Item_BehemothsHeart", "Item_Damage9"}
+behaviorLib.MidItems  = {"Item_Immunity", "Item_ElderParasite" }
+behaviorLib.LateItems  = {"Item_BehemothsHeart", "Item_Damage9"}
 
 
 -- skillbuild table, 0=q, 1=w, 2=e, 3=r, 4=attri
@@ -173,9 +173,6 @@ end
 object.onthinkOld = object.onthink
 object.onthink 	= object.onthinkOverride
 
-
-
-
 ----------------------------------------------
 --            oncombatevent override        --
 -- use to check for infilictors (fe. buffs) --
@@ -205,7 +202,6 @@ end
 -- override combat event trigger function.
 object.oncombateventOld = object.oncombatevent
 object.oncombatevent     = object.oncombateventOverride
-
 
 ------------------------------------------------------
 --            customharassutility override          --
@@ -263,7 +259,7 @@ local function HarassHeroExecuteOverride(botBrain)
 	local abilStun = skills.abilQ
 	local abilDance = skills.abilW
 	
-	BotEcho (nLastHarassUtility..' lastharassutil')
+	--BotEcho (nLastHarassUtility..' lastharassutil')
 	----------------------------------------------------- Staccato / Stun
 	if core.CanSeeUnit(botBrain, unitTarget) then
 		if not bActionTaken then --and bTargetVuln then
@@ -327,13 +323,13 @@ local function funcFindItemsOverride(botBrain)
 	if core.itemAstrolabe ~= nil and not core.itemAstrolabe:IsValid() then
 		core.itemAstrolabe = nil
 	end
-	if core.itemSheepstick ~= nil and not core.itemSheepstick:IsValid() then
-		core.itemSheepstick = nil
+	if core.itemWard ~= nil and not core.itemWard:IsValid() then
+		core.itemWard = nil
 	end
 
 	if bUpdated then
 		--only update if we need to
-		if core.itemSheepstick and core.itemAstrolabe then
+		if core.itemWard and core.itemAstrolabe then
 			return
 		end
 
@@ -346,8 +342,9 @@ local function funcFindItemsOverride(botBrain)
 					core.itemAstrolabe.nHealValue = 200
 					core.itemAstrolabe.nRadius = 600
 					--Echo("Saving astrolabe")
-				elseif core.itemSheepstick == nil and curItem:GetName() == "Item_Morph" then
-					core.itemSheepstick = core.WrapInTable(curItem)
+				elseif core.itemWard == nil and curItem:GetName() == "Item_FlamingEye" then
+					core.itemWard = core.WrapInTable(curItem)
+					core.itemWard.nRadius = 400
 				end
 			end
 		end
@@ -431,11 +428,6 @@ behaviorLib.nHealTimeToLive = nil
 function behaviorLib.HealUtility(botBrain)
 	local bDebugEchos = false
 	
-	--[[
-	if object.myName == "Bot1" then
-		bDebugEchos = true
-	end
-	--]]
 	if bDebugEchos then BotEcho("HealUtility") end
 	
 	local nUtility = 0
@@ -553,7 +545,7 @@ tinsert(behaviorLib.tBehaviors, behaviorLib.HealBehavior)
 
 
 function object.GetUltimateTimeToLiveThreshold () 
---todo: modify according to ult level
+--todo: modify according to ult level?
 	return 4
 end
 	
@@ -562,7 +554,7 @@ function object.GetProtectiveMelodyRadius()
 	return 600
 end
 
----------------------------------------- Function for finding the center of a group (used by ult)
+---------------------------------------- Function for finding the center of a group (used by ult). Kudos to Stolen_id for this
 	local function groupCenter(tGroup, nMinCount)
 		if nMinCount == nil then nMinCount = 1 end
 		 
@@ -588,12 +580,13 @@ end
 -------------------------------------but she will attemt to move to center of group before popping
 													
 function ProtectiveMelodyExecute(botBrain)
+	local unitSelf = core.unitSelf
 	local tTargets = core.CopyTable(core.localUnits["AllyHeroes"]) --re do
 	for key, hero in pairs(tTargets) do
 		if hero:GetUniqueID() ~= unitSelf:GetUniqueID() then
 			local vAlliesCenter = groupCenter(tTargets, 1)
 			--local vecTargetPosition = hero:GetPosition()
-			local unitSelf = core.unitSelf
+			
 			local vecMyPosition = unitSelf:GetPosition()
 			local nTimeToLive = behaviorLib.TimeToLiveUtilityFn(hero)
 			local abilUlt = skills.abilR
@@ -627,6 +620,7 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 	local bActionTaken = false
 	local nTime = 0
 	local nStaccatoChargeThreshold = 250 --ms
+	local unitSelf = core.unitSelf
 	
 	--if bDebugEchos then BotEcho("Checkin defensive Stun") end
 	if not bActionTaken then
@@ -699,8 +693,76 @@ behaviorLib.HealAtWellExecute = HealAtWellExecuteOverride--]]
 
 object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
 behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
-local nRadiuss = object.GetProtectiveMelodyRadius()
-BotEcho ('success'..nRadiuss )
 
 
+----------------------------------
+--	Rhapsody Ward behavior
+--	
+--	Utility: if no wards placed at all and nothing else better to do, will ward
+--	Execute: Will either ward top rune or bot rune, depending which is closer
+----------------------------------
+
+
+function behaviorLib.WardUtility(botBrain)
+	local nUtility = 0
+	core.FindItems()
+	local itemWard = core.itemWard
+	local unitSelf = core.unitSelf
+	local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)
+	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)
+	local nTime = HoN.GetMatchTime()
+	if itemWard and nTime > 120000 then 				--past the 2min mark, we can start placing wards
+														--This is the method i devised to check if there is a ward in said spot.
+		if not HoN.CanSeePosition(vecWardSpot1) then 	--Normally, you would not have vision in the classic ward spots unless wards are placed there
+			nUtility = nUtility + 10					--Please note that this method may not work for all wardspots 
+			--BotEcho('cant see 2')						--and tbh i can't figure out a different method
+		end
+				
+		if not HoN.CanSeePosition(vecWardSpot2) then
+			nUtility = nUtility + 10					--the way theese thresholds are set, this function will either return a 10
+			--BotEcho('cant see 2')						--which means the bot probably won't go ward, or a 20
+		end												--much more likely the bot will ward :)
+				
+	end
+	
+	return nUtility
+end
+
+function behaviorLib.WardExecute(botBrain)
+	core.FindItems()
+	local unitSelf = core.unitSelf
+	local itemWard = core.itemWard
+	local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)
+	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)	
+	local vecWardCommit = vecWardSpot2		--commit to this ward spot
+	--local nDistCommit
+	if itemWard then
+		local nDistance1Sq = Vector3.Distance2DSq(unitSelf:GetPosition(), vecWardSpot1)
+		local nDistance2Sq = Vector3.Distance2DSq(unitSelf:GetPosition(), vecWardSpot2)
+		--nDistCommit = nDistance2Sq
+		if nDistance1Sq < nDistance2Sq then 
+			vecWardCommit = vecWardSpot1			--if the other ward spot is closer, commit to that ward spot
+			--nDistCommit = nDistance1Sq
+		end
+		
+		if ( nDistance1Sq or nDistance2Sq ) < (itemWard.nRadius * itemWard.nRadius) then
+			core.OrderItemPosition (botBrain, unitSelf, itemWard, vecWardSpot1)
+		else
+			core.OrderMoveToPosClamp(botBrain, unitSelf, vecWardCommit, false)
+		end
+	else 
+		return false
+	end
+	
+	return true
+end
+
+behaviorLib.WardBehavior = {}										--adding the ward behavior to the behaviors table
+behaviorLib.WardBehavior["Utility"] = behaviorLib.WardUtility
+behaviorLib.WardBehavior["Execute"] = behaviorLib.WardExecute
+behaviorLib.WardBehavior["Name"] = "Ward"
+tinsert(behaviorLib.tBehaviors, behaviorLib.WardBehavior)
+
+
+BotEcho ('success')
 
