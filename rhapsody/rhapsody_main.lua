@@ -9,7 +9,7 @@
 --																 -----
 ----------------------------------------------------------------------
 ----------------------------------------------------------------------
--- Rhapbot v0.7
+-- Rhapbot v0.8
 -- Based on Scorcher, Demented Shaman, Glacius and so on.
 -- I think i stole stuff from most of the s2 bots to make this
 -- Flint, Ra, Hammer... and so on
@@ -120,7 +120,7 @@ object.nabilQThreshold = 20
 object.nabilWThreshold = 40
 object.MoMThreshold = 70 --i don't want my bot to get extra aggresive if she has this item, just use it
 						 --if situation is aggresive enough
-
+object.nTime = 0
 
 --####################################################################
 --####################################################################
@@ -133,8 +133,7 @@ object.MoMThreshold = 70 --i don't want my bot to get extra aggresive if she has
 ------------------------------
 --     skills               --
 ------------------------------
--- @param: none
--- @return: none
+
 function object:SkillBuild()
     core.VerboseLog("skillbuild()")
 
@@ -227,12 +226,8 @@ behaviorLib.CustomHarassUtilityFn = CustomHarassUtilityFnOverride
 
 --------------------------------------------------------------
 --                    Harass Behavior                       --
--- All code how to use abilities against enemies goes here  --
+--  														--
 --------------------------------------------------------------
--- @param botBrain: CBotBrain
--- @return: none
---
-
 local function HarassHeroExecuteOverride(botBrain)
     
     local unitTarget = behaviorLib.heroTarget
@@ -254,7 +249,6 @@ local function HarassHeroExecuteOverride(botBrain)
     local bActionTaken = false
     local bTargetVuln = unitTarget:IsStunned() or unitTarget:IsImmobilized()
 	local bDanceSuccess = false
-    local nTime = 0
    
 	local abilStun = skills.abilQ
 	local abilDance = skills.abilW
@@ -267,7 +261,7 @@ local function HarassHeroExecuteOverride(botBrain)
                 local nRange = abilStun:GetRange()												-- state_rhapsody_ability1_self means that rhapsody has staccato charges
                 if nTargetDistanceSq < (nRange * nRange) then
                     bActionTaken = core.OrderAbilityEntity(botBrain, abilStun, unitTarget)
-					nTime = HoN.GetGameTime()			--the moment in the game that rhapsody used the orginal stun (used for staccato stagger)
+					object.nTime = HoN.GetGameTime()			--the moment in the game that rhapsody used the orginal stun (used for staccato stagger)
                 else
                     bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
 					
@@ -277,7 +271,7 @@ local function HarassHeroExecuteOverride(botBrain)
     end 
 	----------------------------------------------------- Dance dance 
 	if not bActionTaken then
-		if abilDance:CanActivate() then
+		if abilDance:CanActivate() and unitTarget:GetHealthPercent() > 15 then
 			if nLastHarassUtility > botBrain.nabilWThreshold or bTargetVuln then
                 local nRange = abilDance:GetRange()
                 if nTargetDistanceSq < (nRange * nRange) then
@@ -292,9 +286,9 @@ local function HarassHeroExecuteOverride(botBrain)
     if not bActionTaken then
 		if unitSelf:HasState("State_Rhapsody_Ability1_Self") and not bTargetVuln then 
 			local nCurTime = HoN.GetGameTime()
-			if nCurTime - nTime >= nStaccatoChargeThreshold then --if current time 250ms after last stun, do another stun!
+			if nCurTime - object.nTime >= nStaccatoChargeThreshold then --if current time 250ms after last stun, do another stun!
 				core.OrderAbility(botBrain, abilStun)
-				nTime = nCurTime
+				object.nTime = nCurTime
 			end
 		end  	  
 	end
@@ -320,7 +314,10 @@ object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 
 
--- find items override --------------------------------------
+--------------------------------------------------------------
+--                    FindItems Override                    --
+--  														--
+--------------------------------------------------------------
 local function funcFindItemsOverride(botBrain)
 	local bUpdated = object.FindItemsOld(botBrain)
 
@@ -367,13 +364,137 @@ end
 object.FindItemsOld = core.FindItems
 core.FindItems = funcFindItemsOverride
 
-----------------------------------
+--------------------------------------------------------------
+--                RetreatFromThreat Override     	        --
+--  		     --Use staccato defensively--				--
+--------------------------------------------------------------
+object.nRetreatStunThreshold = 43
+
+--Unfortunately this utility is kind of volatile, so we basically have to deal with util spikes
+function funcRetreatFromThreatExecuteOverride(botBrain)
+	local bDebugEchos = false
+	local bActionTaken = false
+	local nStaccatoChargeThreshold = 500 --ms
+	local unitSelf = core.unitSelf
+	local abilStun = skills.abilQ
+	--BotEcho("Checkin defensive Stun")
+	if not bActionTaken then
+		--Stun use
+		
+		if abilStun:CanActivate() and not unitSelf:HasState("State_Rhapsody_Ability1_Self") then
+			BotEcho("CanActivate!  nRetreatUtil: "..behaviorLib.lastRetreatUtil.."  thresh: "..object.nRetreatStunThreshold)
+			if behaviorLib.lastRetreatUtil >= object.nRetreatStunThreshold then
+				local tTargets = core.CopyTable(core.localUnits["EnemyHeroes"])
+				if tTargets then
+					local vecMyPosition = unitSelf:GetPosition() 
+					local nRange = abilStun:GetRange()					
+					for key, hero in pairs(tTargets) do
+						local heroPos = hero:GetPosition()
+						local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, heroPos)
+						if nTargetDistanceSq < (nRange * nRange) and abilStun:CanActivate() then
+							core.OrderAbilityEntity(botBrain, abilStun, hero) -- will only attempt to stun if he is in range, no turning back!
+							object.nTime = HoN.GetGameTime()
+						end
+
+					end
+				end	
+			end
+		end
+	end
+	--Staccato charges stagger
+	if not bActionTaken then
+		if unitSelf:HasState("State_Rhapsody_Ability1_Self") and not bTargetVuln then 
+			local nCurTime = HoN.GetGameTime()
+			if nCurTime - object.nTime >= nStaccatoChargeThreshold then --if current time X ms after last stun, do another stun!
+				core.OrderAbility(botBrain, abilStun)
+				object.nTime = nCurTime
+			end
+		end  	  
+	end
+	
+
+	if not bActionTaken then
+		return object.RetreatFromThreatExecuteOld(botBrain)
+	end
+end
+object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
+behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
+
+
+--------------------------------------------------------------
+--              	  PushExecute Override     		        --
+--    needed to make rhapbot use dance inferno on pushes	--
+--------------------------------------------------------------
+------------ Function for finding the center of a group (used by ult and some other places). Kudos to Stolen_id for this
+	local function groupCenter(tGroup, nMinCount)
+		if nMinCount == nil then nMinCount = 1 end
+		 
+		if tGroup ~= nil then
+			local vGroupCenter = Vector3.Create()
+			local nGroupCount = 0
+			for id, creep in pairs(tGroup) do
+				vGroupCenter = vGroupCenter + creep:GetPosition()
+				nGroupCount = nGroupCount + 1
+			end
+			 
+			if nGroupCount < nMinCount then
+				return nil
+			else
+				return vGroupCenter/nGroupCount-- center vector
+			end
+		else
+			return nil   
+		end
+	end
+
+function AbilityPush(botBrain)
+	local bSuccess = false
+	local abilDance = skills.abilW
+	local unitSelf = core.unitSelf
+	local vCreepCenter = groupCenter(core.localUnits["EnemyCreeps"], 3) -- the 3 basicly wont allow abilities under 3 creeps
+	--if vCreepCenter then 
+	--	BotEcho ('vCreepCenter')
+	--end
+	if abilDance:CanActivate() and vCreepCenter and unitSelf:GetManaPercent() > 45 then 
+		--BotEcho('here boss')
+		core.OrderAbilityPosition(botBrain, abilDance, vCreepCenter)
+		bSuccess = true
+	end
+	return bSuccess
+end
+
+local function PushExecuteOverride(botBrain)
+	if not AbilityPush(botBrain) then 
+		object.PushExecuteOld(botBrain)
+	end
+
+end
+object.PushExecuteOld = behaviorLib.PushBehavior["Execute"]
+behaviorLib.PushBehavior["Execute"] = PushExecuteOverride
+
+
+local function TeamGroupBehaviorOverride(botBrain)
+	AbilityPush(botBrain)
+	object.TeamGroupBehaviorOld(botBrain)
+	
+end
+object.TeamGroupBehaviorOld = behaviorLib.TeamGroupBehavior["Execute"]
+behaviorLib.TeamGroupBehavior["Execute"] = TeamGroupBehaviorOverride
+
+--####################################################################
+--####################################################################
+--#                                                                 ##
+--#   bot added behaviors                                           ##
+--#                                                                 ##
+--####################################################################
+--####################################################################
+------------------------------------------------------------
 --	Rhapsody Help behavior
 --	
---	Utility: 
 --	Execute: Use Astrolabe / Protective Melody
---  The following few functions are a necesary copy pasta (with adaptaions for rhapsody's skills, ofc)
-----------------------------------
+--  The following few functions are a  necesary 
+--  copy pasta (with adaptaions for rhapsody's skills, ofc)
+------------------------------------------------------------
 behaviorLib.nHealUtilityMul = 0.8
 behaviorLib.nHealHealthUtilityMul = 1.0
 behaviorLib.nHealTimeToLiveUtilityMul = 0.5
@@ -568,27 +689,7 @@ function object.GetProtectiveMelodyRadius()
 	return 600
 end
 
----------------------------------------- Function for finding the center of a group (used by ult). Kudos to Stolen_id for this
-	local function groupCenter(tGroup, nMinCount)
-		if nMinCount == nil then nMinCount = 1 end
-		 
-		if tGroup ~= nil then
-			local vGroupCenter = Vector3.Create()
-			local nGroupCount = 0
-			for id, creep in pairs(tGroup) do
-				vGroupCenter = vGroupCenter + creep:GetPosition()
-				nGroupCount = nGroupCount + 1
-			end
-			 
-			if nGroupCount < nMinCount then
-				return nil
-			else
-				return vGroupCenter/nGroupCount-- center vector
-			end
-		else
-			return nil   
-		end
-	end
+
 -------------------------------------Ultimate Execution 
 -------------------------------------Rhapsody's ult can be activated for just 1 teammate
 -------------------------------------but she will attemt to move to center of group before popping
@@ -627,70 +728,12 @@ function ProtectiveMelodyExecute(botBrain)
 	end
 end
 
-----------------------------------
---  RetreatFromThreat Override EXPERIMENTAL
---  to do: add %hp to the mix?
-----------------------------------
-object.nRetreatStunThreshold = 45
-
---Unfortunately this utility is kind of volatile, so we basically have to deal with util spikes
-function funcRetreatFromThreatExecuteOverride(botBrain)
-	local bDebugEchos = false
-	local bActionTaken = false
-	local nTime = 0
-	local nStaccatoChargeThreshold = 250 --ms
-	local unitSelf = core.unitSelf
-	local abilStun = skills.abilQ
-	--if bDebugEchos then BotEcho("Checkin defensive Stun") end
-	if not bActionTaken then
-		--Stun use
-		
-		if abilStun:CanActivate() and not unitSelf:HasState("State_Rhapsody_Ability1_Self") then
-			BotEcho("CanActivate!  nRetreatUtil: "..behaviorLib.lastRetreatUtil.."  thresh: "..object.nRetreatStunThreshold)
-			if behaviorLib.lastRetreatUtil >= object.nRetreatStunThreshold then
-				local tTargets = core.CopyTable(core.localUnits["EnemyHeroes"])
-				if tTargets then
-					local vecMyPosition = unitSelf:GetPosition() 
-					local nRange = abilStun:GetRange()					
-					for key, hero in pairs(tTargets) do
-						local heroPos = hero:GetPosition()
-						local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, heroPos)
-						if nTargetDistanceSq < (nRange * nRange) and abilStun:CanActivate() then
-							core.OrderAbilityEntity(botBrain, abilStun, hero) -- will only attempt to stun if he is in range, no turning back!
-							nTime = HoN.GetGameTime()
-						end
-
-					end
-				end	
-			end
-		end
-	end
-	--Staccato charges stagger
-	if not bActionTaken then
-		if unitSelf:HasState("State_Rhapsody_Ability1_Self") and not bTargetVuln then 
-			local nCurTime = HoN.GetGameTime()
-			if nCurTime - nTime >= nStaccatoChargeThreshold then --if current time 250ms after last stun, do another stun!
-				core.OrderAbility(botBrain, abilStun)
-				nTime = nCurTime
-			end
-		end  	  
-	end
-	
-
-	if not bActionTaken then
-		return object.RetreatFromThreatExecuteOld(botBrain)
-	end
-end
-object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatExecute
-behaviorLib.RetreatFromThreatBehavior["Execute"] = funcRetreatFromThreatExecuteOverride
-
-
-----------------------------------
+------------------------------------------------------------------------------
 --	Rhapsody Ward behavior
 --	
 --	Utility: if no wards placed at all and nothing else better to do, will ward
 --	Execute: Will either ward top rune or bot rune, depending which is closer
-----------------------------------
+-------------------------------------------------------------------------------
 
 
 function behaviorLib.WardUtility(botBrain)
@@ -698,18 +741,18 @@ function behaviorLib.WardUtility(botBrain)
 	core.FindItems()
 	local itemWard = core.itemWard
 	local unitSelf = core.unitSelf
-	local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)
-	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)
+	local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)	--classic bot rune wardspot coords
+	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)	--classic top rune wardspot coords
 	local nTime = HoN.GetMatchTime()
 	if itemWard and nTime > 120000 then 				--past the 2min mark, we can start placing wards
 														--This is the method i devised to check if there is a ward in said spot.
 		if not HoN.CanSeePosition(vecWardSpot1) then 	--Normally, you would not have vision in the classic ward spots unless wards are placed there
-			nUtility = nUtility + 50					--Please note that this method may not work for all wardspots 
+			nUtility = nUtility + 10					--Please note that this method may not work for all wardspots 
 			--BotEcho('cant see 1')						--and tbh i can't figure out a different method
 		end
 				
 		if not HoN.CanSeePosition(vecWardSpot2) then
-			nUtility = nUtility + 50					--the way theese thresholds are set, this function will either return a 10
+			nUtility = nUtility + 10					--the way theese thresholds are set, this function will either return a 10
 			--BotEcho('cant see 2')						--which means the bot probably won't go ward, or a 20
 		end												--much more likely the bot will ward :)
 				
@@ -720,13 +763,13 @@ end
 
 function behaviorLib.WardExecute(botBrain)
 	core.FindItems()
-	local unitSelf = core.unitSelf
 	local itemWard = core.itemWard
-	local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)
-	local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)
-	local vecWardCommit = vecWardSpot2		--commit to this ward spot
-	local nDistCommit
 	if itemWard then
+		local vecWardSpot1 = Vector3.Create(10829.2061,5088.8584)
+		local vecWardSpot2 = Vector3.Create(6017.0605,10472.7637)
+		local vecWardCommit = vecWardSpot2		--commit to this ward spot
+		local nDistCommit
+		local unitSelf = core.unitSelf
 		local nDistance1Sq = Vector3.Distance2DSq(unitSelf:GetPosition(), vecWardSpot1)
 		local nDistance2Sq = Vector3.Distance2DSq(unitSelf:GetPosition(), vecWardSpot2)
 		nDistCommit = nDistance2Sq
@@ -753,35 +796,90 @@ behaviorLib.WardBehavior["Execute"] = behaviorLib.WardExecute
 behaviorLib.WardBehavior["Name"] = "Ward"
 tinsert(behaviorLib.tBehaviors, behaviorLib.WardBehavior)
 
---[[local function AbilityPush()
-	local bSuccess = false
-	local abilDance = skills.abilW
-	local vCreepCenter = groupCenter(core.localUnits["EnemyCreeps"], 3) -- the 3 basicly wont allow abilities under 3 creeps
-	if vCreepCenter then 
-		BotEcho ('vCreepCenter')
-	end
-	if abilDance:CanActivate() and vCreepCenter then 
-	core.OrderAbilityPosition(botBrain, abilDance, vCreepCenter)
-		bSuccess = true
-	end
-	return bSuccess
+
+--####################################################################
+--####################################################################
+--#                                                                 ##
+--#   		 CHAT FUNCTIONSS                                        ##
+--#                                                                 ##
+--####################################################################
+--####################################################################
+
+
+object.killMessages = {}
+object.killMessages.GeneralX = {
+	"Theeeere's a laaaady who's sure... all that glitters is GOLD","Whanna whole lotta love!","OH! The song remains the saaame",
+	"Close the doors, put out the light, You know you won't be home tonight...", "Babe, baby, baby, I'm Gonna Leave You. " ,
+	"It's just a spring clean for the May queen", "Oh war is the common cry, Pick up your swords and fly."
+	}
+object.respawnMessagesX = {
+	"I'm having a nervous breakdown, Drive me insane!",
+	"I've been dazed and confused...",
+	"Gonna love you baby, here I come again!! ",
+	"Will your tongue wag so much when I send you the bill? ",
+	"They hold no quarter."
+	}
+-- 
+--
+--
+local function ProcessKillChatOverride(unitTarget, sTargetPlayerName)
+    local nCurrentTime = HoN.GetGameTime()
+    if nCurrentTime < core.nNextChatEventTime then
+        return
+    end   
+     
+    local nToSpamOrNotToSpam = random()
+         
+    if(nToSpamOrNotToSpam < core.nKillChatChance) then
+        local nDelay = random(core.nChatDelayMin, core.nChatDelayMax) 
+        local tHeroMessages = object.killMessages[unitTarget:GetTypeName()]
+	
+	local sTargetName = sTargetPlayerName or unitTarget:GetDisplayName()
+        if tHeroMessages ~= nil and random() <= 0.7 then
+            local nMessage = random(#tHeroMessages)
+            core.AllChat(format(tHeroMessages[nMessage], sTargetPlayerName), nDelay)
+        else
+            local nMessage = random(#object.killMessages.GeneralX) 
+            core.AllChat(format(object.killMessages.GeneralX[nMessage], sTargetPlayerName), nDelay)
+        end
+    end
+     
+    core.nNextChatEventTime = nCurrentTime + core.nChatEventInterval
 end
+core.ProcessKillChat = ProcessKillChatOverride 
 
-local function PushExecuteOverride(botBrain)
-	if not AbilityPush(botBrain) then 
-		object.PushExecuteOld(botBrain)
+local function ProcessRespawnChatOverride()
+	local nCurrentTime = HoN.GetGameTime()	
+	if nCurrentTime < core.nNextChatEventTime then
+		return
+	end	
+	
+	if HoN.GetMatchTime() > 0 then
+		local nDelay = random(core.nChatDelayMin, core.nChatDelayMax) 
+		local sMessage = nil
+		
+		local nToSpamOrNotToSpam = random()
+		if(nToSpamOrNotToSpam < core.nRespawnChatChance) then
+			local nMessage = random(#object.respawnMessagesX) 
+			sMessage = object.respawnMessagesX[nMessage]
+		end
+		
+		
+		if sMessage then
+			core.AllChatLocalizedMessage(sMessage, nil, nDelay)
+		end
+	else 
+		core.AllChat("Rock On!")
 	end
-
+	
+	core.nNextChatEventTime = nCurrentTime + core.nChatEventInterval
 end
-object.PushExecuteOld = behaviorLib.PushBehavior["Execute"]
-behaviorLib.PushBehavior["Execute"] = PushExecuteOverride
+core.ProcessRespawnChat = ProcessRespawnChatOverride
 
-
-local function TeamGroupBehaviorOverride(botBrain)
-	object.TeamGroupBehaviorOld(botBrain)
-	AbilityPush(botBrain)
+local function ProcessDeathChatOverride () 
+--just to shut her up when she dies :>
 end
-object.TeamGroupBehaviorOld = behaviorLib.TeamGroupBehavior["Execute"]
-behaviorLib.TeamGroupBehavior["Execute"] = TeamGroupBehaviorOverride
---]]
+core.ProcessDeathChat = ProcessDeathChatOverride
+
+
 BotEcho ('success')
