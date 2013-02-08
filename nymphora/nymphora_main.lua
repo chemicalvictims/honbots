@@ -50,13 +50,45 @@ local sqrtTwo = math.sqrt(2)
 
 local skillBuild = nil
 
-BotEcho('loading glacius_main...')
+BotEcho('loading nymphora_main...')
 
 object.heroName = 'Hero_Fairy'
 
 object.nNymphManaGive = 
 {
 	75, 150, 225, 300
+}
+
+object.vecNymphTeleportPositions =
+{
+	Vector3.Create(15308, 3924, 128), -- Legion Secret Shop
+	Vector3.Create(1107, 12410, 128), -- Hellbourne Secret Shop
+	Vector3.Create(13223, 3669, 128), -- Near Legion Lane 'Ganking' pos
+	Vector3.Create(3056, 12030, 128), -- Near Hellbourne Lane 'Ganking' pos
+	Vector3.Create(9868, 3249, 128), -- Legion Jungles
+	Vector3.Create(6914, 12709, 128) -- Helbourne Jungles
+	
+	
+}
+
+object.vecNymphTeleportPositionsHellbourne =
+{
+	Vector3.Create(13963, 13436, 110), -- Helbourne Well
+	Vector3.Create(11620, 7974, 128), -- Helbourne Observatory
+	Vector3.Create(9425, 8201, 0), -- Helbourne First Mid Tower
+	Vector3.Create(14219, 6538, 128), -- Helbourne First Bot Tower
+	Vector3.Create(8656, 13997, 128), -- Helbourne Second Top Tower
+	Vector3.Create(3766, 14184, 128) -- Helbourne First Top Tower
+}
+
+object.vecNymphTeleportPositionsLegion =
+{
+	Vector3.Create(1726, 1112, 101), -- Legion Well
+	Vector3.Create(3609, 9089, 128), -- Legion Observatory
+	Vector3.Create(2025, 9316, 128), -- Legion First Top Tower
+	Vector3.Create(12773, 1375, 128), -- Legion First Bot Tower
+	Vector3.Create(7198, 1455, 128), -- Legion Second Bot Tower
+	Vector3.Create(6483, 6242, 0) -- Legion First Mid Tower
 }
 
 --------------------------------
@@ -168,10 +200,26 @@ end
 --                   Overrides                   --
 ---------------------------------------------------
 
+--local thoughtOnce = false
+
 function object:onthinkOverride(tGameVariables)
+	--if(thoughtOnce)
+	--then
+	--	local unitSelf = self.core.unitSelf
+	--	local pos = unitSelf:GetPosition()
+	--
+	--	BotEcho(pos.x .. "," .. pos.y .. "," .. pos.z)
+	--	return
+	--end
 	self:onthinkOld(tGameVariables)
+	--thoughtOnce = true
+	--core.unitSelf:TeamShare()
+	
 	local unitSelf = self.core.unitSelf
 	local pos = unitSelf:GetPosition()
+	
+	--BotEcho(pos.x .. "," .. pos.y .. "," .. pos.z)
+	
 	if(not unitSelf:IsAlive() or unitSelf:IsChanneling())then return end
 	
 	if(skills.mana:CanActivate() or skills.health:CanActivate())
@@ -215,16 +263,6 @@ function object:onthinkOverride(tGameVariables)
 			core.OrderAbilityPosition(object, health, heroWithMinHealthRatio:GetPosition())
 		end
 	end
-	
-	if(skills.tele:CanActivate())
-	then
-		local goal = behaviorLib.vecGoal
-		local distSq = Vector3.Distance2DSq(goal, unitSelf:GetPosition())
-		if(distSq >= object.nTeleportRange * object.nTeleportRange)
-		then
-			object:OrderAbilityPosition(skills.tele, goal)
-		end
-	end
 end
 object.onthinkOld = object.onthink
 object.onthink 	= object.onthinkOverride
@@ -240,19 +278,19 @@ local function AbilitiesUpUtilityFn()
 	local nUtility = 0
 	
 	if skills.health:CanActivate() then
-		--nUtility = nUtility + object.nHealUpBonus
+		nUtility = nUtility + object.nHealUpBonus
 	end
 	
 	if skills.mana:CanActivate() then
-		--nUtility = nUtility + object.nManaUpBonus
+		nUtility = nUtility + object.nManaUpBonus
 	end
 		
 	if skills.stun:CanActivate() then
-		--nUtility = nUtility + object.nStunUpBonus
+		nUtility = nUtility + object.nStunUpBonus
 	end
 	
 	if object.itemSheepstick and object.itemSheepstick:CanActivate() then
-		--nUtility = nUtility + object.nSheepstickUp
+		nUtility = nUtility + object.nSheepstickUp
 	end
 	
 	return nUtility
@@ -292,13 +330,71 @@ end
 object.oncombateventOld = object.oncombatevent
 object.oncombatevent 	= object.oncombateventOverride
 
+function behaviorLib.MoveExecuteOverride(botBrain, vecDesiredPosition)
+	local bActionTaken = false
+	if(skills.tele:CanActivate())
+	then
+		local unitSelf = object.core.unitSelf
+		local goal = vecDesiredPosition
+		local selfPos = unitSelf:GetPosition()
+		local distSq = Vector3.Distance2DSq(goal, selfPos)
+		
+		local teamTable
+		
+		if(unitSelf:GetTeam() == HoN.GetLegionTeam())
+		then
+			teamTable = object.vecNymphTeleportPositionsLegion
+		else
+			teamTable = object.vecNymphTeleportPositionsHellbourne
+		end
+		
+		if(distSq >= object.nTeleportRange * object.nTeleportRange)
+		then
+			local nClosestDestDistSq = 100000 * 100000
+			local vecClosestDest = nil
+			for i, vecPotentialDest in ipairs(object.vecNymphTeleportPositions)
+			do
+				local potDestDistSq = Vector3.Distance2DSq(vecPotentialDest, goal)
+				if(potDestDistSq < nClosestDestDistSq)
+				then
+					nClosestDestDistSq = potDestDistSq
+					vecClosestDest = vecPotentialDest
+				end
+			end
+			
+			for i, vecPotentialDest in ipairs(teamTable)
+			do
+				local potDestDistSq = Vector3.Distance2DSq(vecPotentialDest, goal)
+				if(potDestDistSq < nClosestDestDistSq)
+				then
+					nClosestDestDistSq = potDestDistSq
+					vecClosestDest = vecPotentialDest
+				end
+			end
+			if(vecClosestDest ~= nil)
+			then
+				object:OrderAbilityPosition(skills.tele, vecClosestDest)
+				object:TeamChat("Teleporting Away!")
+				bActionTaken = true
+			end
+		end
+	end
+	
+	if not bActionTaken
+	then
+		behaviorLib.MoveExecuteOld(botBrain, vecDesiredPosition)
+	end
+end
+behaviorLib.MoveExecuteOld = behaviorLib.MoveExecute
+behaviorLib.MoveExecute = behaviorLib.MoveExecuteOverride
+
 --Utility calc override
 local function CustomHarassUtilityOverride(hero)
 	local nUtility = AbilitiesUpUtilityFn()
 	
 	return nUtility
 end
-behaviorLib.CustomHarassUtility = CustomHarassUtilityOverride  
+behaviorLib.CustomHarassUtility = CustomHarassUtilityOverride 
 
 
 ----------------------------------
@@ -335,8 +431,7 @@ local function HarassHeroExecuteOverride(botBrain)
 		--TODO: early break logic
 		return
 	end
---[[
-	--since we are using an old pointer, ensure we can still see the target for entity targeting
+	
 	if core.CanSeeUnit(botBrain, unitTarget) then
 		local bTargetVuln = unitTarget:IsStunned() or unitTarget:IsImmobilized()
 
@@ -353,56 +448,8 @@ local function HarassHeroExecuteOverride(botBrain)
 				end
 			end
 		end
-
-		
-		--ice imprisonment
-		if not bActionTaken and not bTargetRooted and nLastHarassUtil > botBrain.nIceImprisonmentThreshold and bCanSee then
-			if bDebugEchos then BotEcho("  No action yet, checking ice imprisonment") end
-			local abilIceImprisonment = skills.abilIceImprisonment
-			if abilIceImprisonment:CanActivate() then
-				local nRange = abilIceImprisonment:GetRange()
-				if nTargetDistanceSq < (nRange * nRange) then
-					bActionTaken = core.OrderAbilityEntity(botBrain, abilIceImprisonment, unitTarget)
-				end
-			end
-		end
 	end
 	
-	--tundra blast
-	if not bActionTaken and nLastHarassUtil > botBrain.nTundraBlastThreshold then
-		if bDebugEchos then BotEcho("  No action yet, checking tundra blast") end
-		local abilTundraBlast = skills.abilTundraBlast
-		if abilTundraBlast:CanActivate() then
-			local abilTundraBlast = skills.abilTundraBlast
-			local nRadius = botBrain.GetTundraBlastRadius()
-			local nRange = skills.abilTundraBlast and skills.abilTundraBlast:GetRange() or nil
-			local vecTarget = core.AoETargeting(unitSelf, nRange, nRadius, true, unitTarget, core.enemyTeam, nil)
-				
-			if vecTarget then
-				bActionTaken = core.OrderAbilityPosition(botBrain, abilTundraBlast, vecTarget)
-			end
-		end
-	end
-	
-	--ult
-	if not bActionTaken and nLastHarassUtil > botBrain.nGlacialDownpourThreshold then
-		if bDebugEchos then BotEcho("  No action yet, checking glacial downpour.") end
-		local abilGlacialDownpour = skills.abilGlacialDownpour
-		if abilGlacialDownpour:CanActivate() then
-			--get the target well within the radius for maximum effect
-			local nRadius = botBrain.GetGlacialDownpourRadius()
-			local nHalfRadiusSq = nRadius * nRadius * 0.25
-			if nTargetDistanceSq <= nHalfRadiusSq then
-				bActionTaken = core.OrderAbility(botBrain, abilGlacialDownpour)
-			elseif not unitSelf:IsAttackReady() then
-				--move in when we aren't attacking
-				core.OrderMoveToUnit(botBrain, unitSelf, unitTarget)
-				bActionTaken = true
-			end
-		end
-	end
-		--]]
-		
 	if not bActionTaken and nLastHarassUtil > botBrain.nStunThreshold then
 		local stun = skills.stun
 		
@@ -428,22 +475,6 @@ local function HarassHeroExecuteOverride(botBrain)
 			end
 		end
 	end
-	
-	--[[if not bActionTaken and nLastHarassUtil > 15 then
-		local mana = skills.mana
-		if(mana:CanActivate())
-		then
-			local myTeam = unitSelf:GetTeam()
-			local peopleAround = HoN:GetUnitsInRadius(vecMyPosition, 800, core.UNIT_MASK_ALIVE + core.UNIT_MASK_HERO)
-			for _, hero in pairs(peopleAround) do
-				if(hero:GetTeam() == myTeam)
-				then
-					core.OrderAbilityEntity(botBrain, mana, hero)
-					bActionTaken = true
-				end
-			end
-		end
-	end--]]
 	
 	if not bActionTaken then
 		if bDebugEchos then BotEcho("  No action yet, proceeding with normal harass execute.") end
@@ -657,6 +688,91 @@ behaviorLib.HealBehavior["Name"] = "Heal"
 tinsert(behaviorLib.tBehaviors, behaviorLib.HealBehavior)
 
 
+function behaviorLib.RetreatFromThreatExecuteOverride(botBrain)
+	local unitSelf = object.core.unitSelf
+	local vecPos = unitSelf:GetPosition()
+	local myTeam = unitSelf:GetTeam()
+	
+	if(behaviorLib.lastRetreatUtil > behaviorLib.retreatStunUtilThreshold and skills.stun:CanActivate())
+	then
+		local stun = skills.stun
+		local closestThreatVec = nil
+		local unitsHeroes = HoN.GetUnitsInRadius(vecPos, 800, core.UNIT_MASK_ALIVE + core.UNIT_MASK_HERO)
+		
+		for _, unitHero in pairs(unitsHeroes) do
+			local vecHeroPos = unitHero:GetPosition()
+			if(behaviorLib.GetThreat(unitHero) > behaviorLib.retreatStunThreatThreshold and HoN.CanSeePosition(vecHeroPos) and unitHero:GetTeam() ~= unitSelf:GetTeam())
+			then
+				closestThreatVec = unitHero:GetPosition()
+			end
+		end
+		
+		if(not(closestThreatVec == nil))
+		then
+			core.OrderAbilityPosition(botBrain, stun, closestThreatVec)
+		end
+	end
+	return object.RetreatFromThreatExecuteOld(botBrain)
+end
+
+behaviorLib.retreatStunThreatThreshold = 3000
+behaviorLib.retreatStunUtilThreshold = 20
+object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatBehavior["Execute"]
+behaviorLib.RetreatFromThreatBehavior["Execute"] = behaviorLib.RetreatFromThreatExecuteOverride
+
+local function healingPushStrength()
+	return skills.health:GetLevel() * 20 -- 20 at level 4 heal
+end
+
+local function PushingStrengthUtilityOverride(myHero)
+	local nUtility = object.funcPushUtilityOld(myHero)
+	
+	nUtility = nUtility + healingPushStrength()
+	nUtility = Clamp(nUtility, 0, 100)
+	
+	return nUtility
+end
+object.funcPushUtilityOld = behaviorLib.PushingStrengthUtility
+behaviorLib.PushingStrengthUtility = PushingStrengthUtilityOverride
+
+function behaviorLib.PushExecuteOverride(botBrain)
+	local bActionTaken = false
+	
+	if(skills.health:CanActivate())
+	then
+		local abilHeal = skills.health
+		local vecMyPos, unitSelf, myTeam
+		local unitsNear
+		
+		unitSelf = object.core.unitSelf
+		vecMyPos = unitSelf:GetPosition()
+		myTeam = unitSelf:GetTeam()
+		
+		unitsNear = HoN.GetUnitsInRadius(vecMyPos, 600, core.UNIT_MASK_ALIVE + core.UNIT_MASK_UNIT)
+		
+		for _, unitNear in pairs(unitsNear)
+		do
+			if(myTeam ~= unitNear:GetTeam() and not (unitNear:IsHero()))
+			then
+				object:OrderAbilityPosition(abilHeal, unitNear:GetPosition())
+				bActionTaken = true
+				break
+			end
+		end
+	end
+	
+	if not bActionTaken
+	then
+		behaviorLib.PushExecuteOld(botBrain)
+	end
+end
+
+behaviorLib.PushExecuteOld = behaviorLib.PushBehavior["Execute"]
+behaviorLib.PushBehavior["Execute"] = behaviorLib.PushExecuteOverride
+
+--object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
+--behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
+
 ----------------------------------
 --	Glacius items
 ----------------------------------
@@ -696,4 +812,4 @@ behaviorLib.LateItems =
 	invisible
 --]]
 
-BotEcho('finished loading glacius_main')
+BotEcho('finished loading nymphora_main')
