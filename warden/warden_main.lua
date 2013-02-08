@@ -132,15 +132,15 @@ object.onthink 	= object.onthinkOverride
 --  Ability use increases harass util for a time
 ----------------------------------
 
-object.wolvesUpBonus = 11
-object.silenceUpBonus = 12
+object.wolvesUpBonus = 8
+object.silenceUpBonus = 5
 object.trapUp = 0
-object.birdAttackUp = 14
+object.birdAttackUp = 9
 object.birdHealUp = 10
 object.birdStormUp = 7
 
 object.wolvesUsed = 10
-object.silenceUsed = 10
+object.silenceUsed = 5
 object.trappedBonus = 35
 object.birdAttackBonus = 10
 object.birdHealBonus = 10
@@ -319,21 +319,25 @@ local function HarassHeroExecuteOverride(botBrain)
 		end
 	end
 	
+	--wolves to finish off, not sure if this will ever happen..
+	if not bActionTaken then
+		if abilWolves:CanActivate() and unitTarget:GetHealthPercent() < .2 then
+			bActionTaken = core.OrderAbility(botBrain, abilWolves)
+		end
+	end
+	
 	--if someone's stunned and still has lots of health try to drop a trap on them
 	if not bActionTaken then	
 		
 		local nRange = abilTrap:GetRange() + core.GetExtraRange(unitSelf) + core.GetExtraRange(unitTarget)	
-		local nTrapCost = abilTrap:GetManaCost()
 		
 		local bTrapUsable = abilTrap:CanActivate() and nDistanceSq < ((nRange * nRange) - 50)
 		
 		if bTrapUsable and bCanSee then			
 			if unitTarget:IsStunned() or unitTarget:IsImmobilized() or unitTarget:GetMoveSpeed() < 200 then
 				if unitTarget:GetHealthPercent() > .6 then
-					--drop a trap on them		
-					if unitSelf:GetMana() > abilTrap:GetManaCost() then
-						bActionTaken = core.OrderAbilityPosition(botBrain, abilTrap, vecTargetPos)
-					end
+					--drop a trap on them							
+					bActionTaken = core.OrderAbilityPosition(botBrain, abilTrap, vecTargetPos)					
 				end	
 			end
 		end	
@@ -421,9 +425,9 @@ core.FindItems = funcFindItemsOverride
 ----------------------------------
 --  RetreatFromThreat Override	(Courtesy of Spennerino's ScoutBot)
 ----------------------------------
-object.nRetreatWolvesThreshold = 25 --not sure how well these thresholds will work, will probably be tweaking them
-object.nRetreatTrapThreshold = 30
-object.nRetreatSilenceThreshold = 15
+object.nRetreatWolvesThreshold = 18 --not sure how well these thresholds will work, will probably be tweaking them
+object.nRetreatTrapThreshold = 45
+object.nRetreatSilenceThreshold = 3
 
 --Unfortunately this utility is kind of volatile, so we basically have to deal with util spikes 
 function funcRetreatFromThreatExecuteOverride(botBrain)
@@ -433,7 +437,7 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 	local unitSelf = core.unitSelf
 	local vecMyPosition = unitSelf:GetPosition()
 	
-	local unitTarget = behaviorLib.heroTarget 
+	local unitTarget = nil
 	local tEnemies = core.localUnits["EnemyHeroes"]
 	local nCount = 0
 
@@ -441,10 +445,21 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 	for id, unitEnemy in pairs(tEnemies) do
 		if core.CanSeeUnit(botBrain, unitEnemy) then
 			nCount = nCount + 1
+			unitTarget = unitEnemy
+		end
+	end
+		
+	if not bActionTaken then
+		local abilSilence = skills.silence
+		
+		if behaviorLib.lastRetreatUtil >= object.nRetreatSilenceThreshold and unitSelf:GetLevel() > 2 then
+			if unitTarget ~= nil and abilSilence:CanActivate() then
+				bActionTaken = core.OrderAbilityEntity(botBrain, abilSilence, unitTarget)
+			end
 		end
 	end
 	
-	if unitSelf:GetHealthPercent() < .5 then
+	if unitSelf:GetHealthPercent() < .75 then
 		if nCount > 0 then
 			--If we're getting pressured and ready to run away, first attempt to use wolves to slow them
 			if not bActionTaken then
@@ -468,21 +483,6 @@ function funcRetreatFromThreatExecuteOverride(botBrain)
 		end
 	end
 	
-	if not bActionTaken then
-		local abilSilence = skills.silence
-		
-		if unitSelf:GetManaPercent() > .8 and unitSelf:GetLevel() > 6 then
-		
-			local tEnemies = core.localUnits["EnemyHeroes"]
-				
-			--check to see if there are 2 or more enemies around
-			for id, unitEnemy in pairs(tEnemies) do
-				if core.CanSeeUnit(botBrain, unitEnemy) then
-					bActionTaken = core.OrderAbilityEntity(botBrain, abilSilence, unitEnemy)
-				end
-			end				
-		end
-	end
 		
 	
 	if not bActionTaken then
@@ -515,11 +515,11 @@ local function groupCenter(tGroup, nMinCount)
     end
 end
 
---[[
+
 ----------------------------------
 --  Push Override
 ----------------------------------
-object.trapCreepsThreshold = 20
+object.trapCreepsThreshold = 19
 
 --if were in all oout push mode try to use traps to kill creep waves faster
 local function funcPushBehaviorExecuteOverride(botBrain)
@@ -530,12 +530,25 @@ local function funcPushBehaviorExecuteOverride(botBrain)
 	local bActionTaken = false
 	local unitSelf = core.unitSelf
 	
-	if bDebugEchos then BotEcho(nLastPushUtil) end
+	if nLastPushUtil ~= nil then
 	
 	if not bActionTaken then
+		
+		local nMask = core.UNIT_MASK_GADGET + core.UNIT_MASK_UNIT + core.UNIT_MASK_ALIVE
+				
+		--find our trap to deny it
+		tGadgets = HoN.GetUnitsInRadius(unitSelf:GetPosition(), 1500, nMask)
+								
+		for id, trap in pairs(tGadgets) do
+			if trap:GetTypeName() == 'Gadget_EmeraldWarden_Ability3' or trap:GetTypeName() == 'Gadget_EmeraldWarden_Ability3b' then
+				core.OrderAttackClamp(botBrain, unitSelf, trap)
+				bActionTaken = true
+			end				
+		end	
+	
 		local abilTrap = skills.trap
 		--Try to drop a trap on enemy creeps
-		if behaviorLib.nLastPushUtil >= object.trapCreepsThreshold and abilTrap:CanActivate() then
+		if nLastPushUtil >= object.trapCreepsThreshold and abilTrap:CanActivate() then
 			
 			local tEnemyCreeps = core.localUnits["EnemyCreeps"]
 			local nAttackingCount = 0
@@ -545,23 +558,10 @@ local function funcPushBehaviorExecuteOverride(botBrain)
 				if creeps:IsAttackReady() ~= true then
 					nAttackingCount = nAttackingCount + 1
 				end
-			end
+			end			
 			
-			if bDebugEchos then BotEcho(nAttackingCount) end
-			
-			if  nAttackingCount > 4 then
-				if bDebugEchos then BotEcho("Pushing creeps!") end
-				bActionTaken = core.OrderAbilityPosition(botBrain, abilTrap, groupCenter(tEnemyCreeps, 1))
-				
-				--find our trap to deny it
-				tGadgets = HoN.GetUnitsInRadius(unitSelf:GetPosition(), 450, core.UNIT_MASK_GADGET)
-				
-				for id, trap in pairs(tGadgets) do
-					if bDebugEchos then BotEcho(trap:GetDisplayName()) end
-					if trap:GetDisplayName() == 'Gadget_EmeraldWarden_Ability3' then
-						core.OrderAttackClamp(botBrain, unitSelf, trap)
-					end				
-				end						
+			if  nAttackingCount > 2 and abilTrap:GetLevel() > 2 then
+				bActionTaken = core.OrderAbilityPosition(botBrain, abilTrap, groupCenter(tEnemyCreeps, 1))									
 			end
 		end	
 	end
@@ -569,10 +569,12 @@ local function funcPushBehaviorExecuteOverride(botBrain)
 		return object.PushBehaviorExecuteOld(botBrain)
 	end
 	
+	end
+	
 end
 object.PushBehaviorExecuteOld = behaviorLib.PushExecute
 behaviorLib.PushBehavior["Execute"] = funcPushBehaviorExecuteOverride
-]]--
+
 
 ----------------------------------
 --	Warden items
@@ -581,7 +583,7 @@ behaviorLib.PushBehavior["Execute"] = funcPushBehaviorExecuteOverride
 behaviorLib.StartingItems = {"Item_RunesOfTheBlight", "Item_HealthPotion", "Item_DuckBoots", "Item_DuckBoots", "Item_MinorTotem", "Item_MinorTotem"}
 behaviorLib.LaneItems = {"Item_IronShield", "Item_EnhancedMarchers", "Item_MysticVestments"}
 behaviorLib.MidItems = {"Item_Protect", "Item_StrengthAgility"}
-behaviorLib.LateItems = {"Item_Weapon3", "Item_Lightning2", 'Item_Damage9'}
+behaviorLib.LateItems = {"Item_Weapon3", "Item_Lightning2", "Item_Lightbrand", 'Item_Damage9'}
 
 
 
