@@ -68,7 +68,7 @@ local BotEcho, VerboseLog, BotLog = core.BotEcho, core.VerboseLog, core.BotLog
 local Clamp = core.Clamp
 
 
-BotEcho(object:GetName()..' loading <hero>_main...')
+BotEcho(object:GetName()..' loading cd_main...')
 
 
 
@@ -101,17 +101,20 @@ object.tSkills = {
     4, 4, 4, 4, 4,
 }
 
-object.nElectricTideUp = 25
-object.nConduitUp = 25
-object.nUltUp = 35
+-- Bonus aggression if skills are up
+object.nElectricTideUp = 15
+object.nConduitUp = 15
+object.nUltUp = 25
 
+-- Bonus aggression if skills are used
 object.nElectricTideUse = 5
-object.nConduitUse = 20
+object.nConduitUse = 15
 object.nUltUse = 25
 
-object.nElectricTideThreshold = 25
-object.nConduitThreshold = 25
-object.nUltThreshold = 45
+-- Thresholds for skills to be used
+object.nElectricTideThreshold = 35
+object.nConduitThreshold = 55
+object.nUltThreshold = 65
 
 
 
@@ -126,7 +129,7 @@ object.nUltThreshold = 45
 --####################################################################
 
 ------------------------------
---     skills               --
+--     Skills               --
 ------------------------------
 -- @param: none
 -- @return: none
@@ -184,7 +187,7 @@ function object:oncombateventOverride(EventData)
 	local nAddBonus = 0
 	
 	if EventData.Type == "Ability" then
-		if bDebugEchos then BotEcho("  ABILILTY EVENT!  InflictorName: "..EventData.InflictorName) end
+		BotEcho("  ABILILTY EVENT!  InflictorName: "..EventData.InflictorName)
 		if EventData.InflictorName == "Ability_CorruptedDisciple1" then
 			nAddBonus = nAddBonus + object.nElectricTideUse
 		elseif EventData.InflictorName == "Ability_CorruptedDisciple2" then
@@ -246,6 +249,28 @@ behaviorLib.CustomHarassUtilityFn = CustomHarassUtilityFnOverride
 -- @param botBrain: CBotBrain
 -- @return: none
 --
+
+local function GetBestConduitTarget()
+	local unitSelf = core.unitSelf
+    local vecMyPosition = unitSelf:GetPosition() 
+	local bestTarget = nil
+	local damage = 0
+	local nRange = skills.abilW:GetRange()
+
+	local tTargets = HoN.GetUnitsInRadius(vecMyPosition, nRange, core.UNIT_MASK_ALIVE + core.UNIT_MASK_HERO)
+	for i, hero in pairs(tTargets) do
+		if (hero:GetTeam() ~= unitSelf:GetTeam()) then
+			if(hero:GetFinalAttackDamageMax() > damage) then
+				damage = hero:GetFinalAttackDamageMax()
+				bestTarget = hero
+			end
+		end
+	end
+	
+	--BotEcho("Best target:"..bestTarget.."Damage:"..damage)
+	return bestTarget
+end
+
 local function HarassHeroExecuteOverride(botBrain)
     
 	local bDebugEchos = false
@@ -256,53 +281,127 @@ local function HarassHeroExecuteOverride(botBrain)
     end
     
     
+	-- Corrupted Disciple variables (unitSelf)
     local unitSelf = core.unitSelf
     local vecMyPosition = unitSelf:GetPosition() 
     local nAttackRange = core.GetAbsoluteAttackRangeToUnit(unitSelf, unitTarget)
     local nMyExtraRange = core.GetExtraRange(unitSelf)
-    
-    local vecTargetPosition = unitTarget:GetPosition()
-    local nTargetExtraRange = core.GetExtraRange(unitTarget)
-    local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, vecTargetPosition)
+	
+	local nMoveSpeed = unitSelf:GetMoveSpeed()
     
     local nLastHarassUtility = behaviorLib.lastHarassUtil
     local bCanSee = core.CanSeeUnit(botBrain, unitTarget)    
+	local nMoveSpeedAggression = 0
+	local nConduitAggression = 0
+	
     local bActionTaken = false
-    
+	
+	-- Target variables
+    local vecTargetPosition = unitTarget:GetPosition()
+    local nTargetExtraRange = core.GetExtraRange(unitTarget)
+    local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, vecTargetPosition)
+	
+	local nTargetMagicResist = unitTarget:GetMagicResistance()
+	local nTargetHealth = unitTarget:GetHealth()
+	local nTargetMoveSpeed = unitTarget:GetMoveSpeed()
     
    	BotEcho("Corrupted Disciple HarassHero at "..nLastHarassUtility)
+	
+	-- Ability variables
+	local abilElectricTide= skills.abilQ
+	local levelQ = skills.abilQ:GetLevel()
+	
+	local abilConduit = skills.abilW
+	local nChargesW = abilConduit:GetCharges()
+	local levelW = skills.abilW:GetLevel()
+	local nConduitRange = abilConduit:GetRange()
+	local nConduitPerCharge = 2
+	
+	local abilUlt = skills.abilR
+	local levelR = skills.abilR:GetLevel()
+	
+	-- Add aggression based on movespeed difference
+	if nMoveSpeed > nTargetMoveSpeed then
+		nMoveSpeedAggression = (((nMoveSpeed/nTargetMoveSpeed)*4)*3)
+	else
+		nMoveSpeedAggression = 0
+	end
+	
+	nLastHarassUtility = (nLastHarassUtility + nMoveSpeedAggression)
+	
+	BotEcho("Movespeedaggression:"..nMoveSpeedAggression)
 
-	if core.CanSeeUnit(botBrain, unitTarget) then
-		if not bActionTaken and nLastHarassUtility > object.nElectricTideThreshold then
-			BotEcho('Checking Electric Tide')
-			local abilElectricTide= skills.abilQ
-			if abilElectricTide:CanActivate() then
-				local nRange = abilElectricTide:GetRange()
-				if nTargetDistanceSq < (700 * 700) then
-					BotEcho('Electric Tide activated')
-					bActionTaken = core.OrderAbility(botBrain, abilElectricTide)
+	-- | Electric Tide (Q) |----------------------------------------
+	local nTideRange = abilElectricTide:GetTargetRadius()
+	local nTideMaxDamage = 140
+	local nTideMinDamage = 80
+	
+	if levelQ == 2 then
+		nTideMaxDamage = 210
+		nTideMinDamage = 120
+	elseif levelQ == 3 then
+		nTideMaxDamage = 280
+		nTideMinDamage = 160
+	elseif levelQ == 4 then
+		nTideMaxDamage = 350
+		nTideMinDamage = 200
+	end
+	
+	if nTargetMagicResist == nil then
+		nTargetMagicResist = 0.248
+	end
+	
+	local nMaxTrueDamageQ = (nTideMaxDamage * (1 - nTargetMagicResist))
+	local nMinTrueDamageQ = (nTideMinDamage * (1 - nTargetMagicResist))
+	
+	BotEcho("TrueDMGQ:"..nMaxTrueDamageQ)
+	
+		-- Use if visible, aggression is high enough, can be activated and in range
+		if bCanSee then
+			if not bActionTaken and nLastHarassUtility > object.nElectricTideThreshold then
+				if abilElectricTide:CanActivate() then
+					BotEcho('Checking Electric Tide')
+					if nTargetDistanceSq < (nTideRange * nTideRange) then
+						BotEcho('Electric Tide activated')
+						bActionTaken = core.OrderAbility(botBrain, abilElectricTide)
+					end
 				end
 			end
 		end
-	end
+		
+		-- Use if visible, in range and target has less health than the total damage of Electric Tide (will kill)
+		if bCanSee then
+			if abilElectricTide:CanActivate() and nTargetDistanceSq < (nTideRange * nTideRange) and nTargetHealth < nMaxTrueDamageQ then
+				bActionTaken = core.OrderAbility(botBrain, abilElectricTide)
+			end
+		end
+	
+		
 
-		if core.CanSeeUnit(botBrain, unitTarget) then
+	-- | Corrupted Conduit (W) | --------------------------------------------------------------
+	
+	if bCanSee then
 		if not bActionTaken and nLastHarassUtility > object.nConduitThreshold then
-			BotEcho('Checking Conduit')
-			local abilConduit = skills.abilW
 			if abilConduit:CanActivate() then
-				local nRange = abilConduit:GetRange()
-				if nTargetDistanceSq < (nRange * nRange) then
+				BotEcho('Checking Conduit')
+				if nTargetDistanceSq < (nConduitRange * nConduitRange) then
 					BotEcho('Conduit activated')
+					unitTarget = GetBestConduitTarget()
 					bActionTaken = core.OrderAbilityEntity(botBrain, abilConduit, unitTarget)
 				end
 			end
 		end
 	end
+	
+		-- Increase aggression based on Conduit charges
+		--nConduitAggression = (nChargesW * nConduitPerCharge)
+	
+		--nLastHarassUtility = (nLastHarassUtility + nConduitAggression)
+			
 
-	if core.CanSeeUnit(botBrain, unitTarget) then
+	-- | Overload (R) | -------------------------------------------------------------------------
+	if bCanSee then
 		if not bActionTaken and nLastHarassUtility > object.nUltThreshold then
-			local abilUlt = skills.abilR
 			if abilUlt:CanActivate() then
 				local nRange = abilUlt:GetRange()
 				if nTargetDistanceSq < (nAttackRange * nAttackRange) then
@@ -326,12 +425,12 @@ object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 
 
-behaviorLib.StartingItems = {"2 Item_DuckBoots", "2 Item_MinorTotem", "Item_HealthPotion", "Item_RunesOfTheBlight"}
+behaviorLib.StartingItems = {"Item_DuckBoots", "4 Item_MinorTotem", "Item_HealthPotion", "Item_RunesOfTheBlight"}
 behaviorLib.LaneItems = {"Item_Marchers", "Item_Shield2", "Item_EnhancedMarchers", "Item_MysticVestments"} --Item_Shield2 = Helm of the black legion
-behaviorLib.MidItems = {"Item_Dawnbringer", "Item_MagicArmo2"} -- Item_MagicArmo2 = Shaman's Headdress
+behaviorLib.MidItems = {"Item_Sicarius", "Item_Strength6", "Item_Dawnbringer", "Item_MagicArmo2"} -- Item_Sicarius = Firebrand, Item_Strength6 = Icebrand, Item_MagicArmo2 = Shaman's Headdress
 behaviorLib.LateItems = {"Item_Weapon3", "Item_Lightning2", "Item_Evasion" } --Weapon3 is Savage Mace. Item_Lightning2 = Charged Hammer, Item_Evasion = Wingbow
 
-BotEcho('finished loading corrupted')
+BotEcho('finished loading cd_main')
 
 
 
