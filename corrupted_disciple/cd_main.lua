@@ -70,6 +70,10 @@ local Clamp = core.Clamp
 
 BotEcho(object:GetName()..' loading cd_main...')
 
+local nChargeTime = 0
+local bChargeTimer = false
+local bChargeCountdown = false
+
 
 
 
@@ -108,13 +112,16 @@ object.nUltUp = 25
 
 -- Bonus aggression if skills are used
 object.nElectricTideUse = 5
-object.nConduitUse = 15
+object.nConduitUse = 10
 object.nUltUse = 25
 
 -- Thresholds for skills to be used
 object.nElectricTideThreshold = 35
 object.nConduitThreshold = 55
 object.nUltThreshold = 65
+
+local nMoveSpeedAggression = 0
+local nConduitAggression = 2
 
 
 
@@ -165,8 +172,20 @@ end
 -- @return: none
 function object:onthinkOverride(tGameVariables)
     self:onthinkOld(tGameVariables)
-
     -- custom code here
+	if bChargeTimer then
+		nChargeTime = nChargeTime + 50
+		BotEcho("Time:"..nChargeTime)
+	end
+	if bChargeCountdown then
+		nChargeTime = nChargeTime - 50
+		BotEcho("Time:"..nChargeTime)
+		
+		if nChargeTime <= 0 then
+			bChargeCountdown = false
+			nChargeTime = 0
+		end
+	end
 end
 object.onthinkOld = object.onthink
 object.onthink 	= object.onthinkOverride
@@ -266,13 +285,11 @@ local function GetBestConduitTarget()
 			end
 		end
 	end
-	
-	--BotEcho("Best target:"..bestTarget.."Damage:"..damage)
+
 	return bestTarget
 end
 
 local function HarassHeroExecuteOverride(botBrain)
-    
 	local bDebugEchos = false
 	
     local unitTarget = behaviorLib.heroTarget
@@ -291,8 +308,6 @@ local function HarassHeroExecuteOverride(botBrain)
     
     local nLastHarassUtility = behaviorLib.lastHarassUtil
     local bCanSee = core.CanSeeUnit(botBrain, unitTarget)    
-	local nMoveSpeedAggression = 0
-	local nConduitAggression = 0
 	
     local bActionTaken = false
 	
@@ -304,8 +319,6 @@ local function HarassHeroExecuteOverride(botBrain)
 	local nTargetMagicResist = unitTarget:GetMagicResistance()
 	local nTargetHealth = unitTarget:GetHealth()
 	local nTargetMoveSpeed = unitTarget:GetMoveSpeed()
-    
-   	BotEcho("Corrupted Disciple HarassHero at "..nLastHarassUtility)
 	
 	-- Ability variables
 	local abilElectricTide= skills.abilQ
@@ -380,23 +393,41 @@ local function HarassHeroExecuteOverride(botBrain)
 
 	-- | Corrupted Conduit (W) | --------------------------------------------------------------
 	
+	-- If the timer has started, check if the target has the Conduit state, if it has: add aggression every second (every charge). If target doesnt have state: disable chargetimer and start countdown (13 seconds until the state dissappears).
+	if bChargeTimer then
+		if unitTarget:HasState("State_CorruptedDisciple_Ability2_Enemy") then
+			BotEcho("TRUE")
+			if nChargeTime >= 1000 then
+				nConduitAggression = (nConduitAggression + nConduitPerCharge)
+				nChargeTime = 0
+				nLastHarassUtility = (nLastHarassUtility + nConduitAggression)
+			end
+		else 
+			bChargeTimer = false
+			nChargeTime = 12750
+			bChargeCountdown = true
+		end
+	end
+	
+	if not bChargeCountdown and not bChargeTimer then -- If the timers arent on, reset Conduit Aggression to 2
+		nConduitAggression = 2
+	end
+	
+	-- Use if visible, aggression is high enough, in range (a range between attack and conduit)
+	-- Starts the timer for the charges (bChargeTimer)
 	if bCanSee then
 		if not bActionTaken and nLastHarassUtility > object.nConduitThreshold then
 			if abilConduit:CanActivate() then
 				BotEcho('Checking Conduit')
-				if nTargetDistanceSq < (nConduitRange * nConduitRange) then
+				if nTargetDistanceSq < (nConduitRange * nAttackRange) then
 					BotEcho('Conduit activated')
 					unitTarget = GetBestConduitTarget()
 					bActionTaken = core.OrderAbilityEntity(botBrain, abilConduit, unitTarget)
+					bChargeTimer = true
 				end
 			end
 		end
 	end
-	
-		-- Increase aggression based on Conduit charges
-		--nConduitAggression = (nChargesW * nConduitPerCharge)
-	
-		--nLastHarassUtility = (nLastHarassUtility + nConduitAggression)
 			
 
 	-- | Overload (R) | -------------------------------------------------------------------------
@@ -413,7 +444,7 @@ local function HarassHeroExecuteOverride(botBrain)
 	end
     
     
-    
+    	BotEcho("CDAgg: "..nConduitAggression.." Harass: "..nLastHarassUtility.." Time: "..nChargeTime)
     
     if not bActionTaken then
 		if bDebugEchos then BotEcho("  No action yet, proceeding with normal harass execute.") end
@@ -427,7 +458,7 @@ behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 
 behaviorLib.StartingItems = {"Item_DuckBoots", "4 Item_MinorTotem", "Item_HealthPotion", "Item_RunesOfTheBlight"}
 behaviorLib.LaneItems = {"Item_Marchers", "Item_Shield2", "Item_EnhancedMarchers", "Item_MysticVestments"} --Item_Shield2 = Helm of the black legion
-behaviorLib.MidItems = {"Item_Sicarius", "Item_Strength6", "Item_Dawnbringer", "Item_MagicArmo2"} -- Item_Sicarius = Firebrand, Item_Strength6 = Icebrand, Item_MagicArmo2 = Shaman's Headdress
+behaviorLib.MidItems = {"Item_Sicarius", "Item_Strength6", "Item_Dawnbringer", "Item_MagicArmor2"} -- Item_Sicarius = Firebrand, Item_Strength6 = Icebrand, Item_MagicArmo2 = Shaman's Headdress
 behaviorLib.LateItems = {"Item_Weapon3", "Item_Lightning2", "Item_Evasion" } --Weapon3 is Savage Mace. Item_Lightning2 = Charged Hammer, Item_Evasion = Wingbow
 
 BotEcho('finished loading cd_main')
