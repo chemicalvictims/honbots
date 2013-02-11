@@ -89,7 +89,7 @@ object.heroName = 'Hero_MonkeyKing'
 behaviorLib.StartingItems  = { "Item_RunesOfTheBlight", "Item_IronBuckler", "Item_LoggersHatchet"}
 behaviorLib.LaneItems  = {"Item_Marchers","Item_ManaBattery"}
 behaviorLib.MidItems  = {"Item_EnhancedMarchers","Item_PowerSupply","Item_Regen","Item_Stealth"}
-behaviorLib.LateItems  = {"Item_Protect","Item_ManaBurn2","Item_Freeze","Item_Sasuke","Item_DaemonicBreastplate"}
+behaviorLib.LateItems  = {"Item_Protect","Item_ManaBurn2","Item_Freeze","Item_Sasuke","Item_DaemonicBreastplate","Item_Damage9"}
 
 
 -- Skillbuild table, 0=Q, 1=W, 2=E, 3=R, 4=Attri
@@ -110,23 +110,23 @@ behaviorLib.nTargetPositioningMul = 0.6
 object.nIllusiveUp = 20
 object.nVaultUp = 30 
 object.nSlamUp = 20
-object.nStealthUp = 20
+object.nStealthUp = 40
 object.nIllusionUp = 20
 
 -- bonus agression points that are applied to the bot upon successfully using a skill/item
 
-object.nIllusiveUse = 25
-object.nVaultUse = 30 
-object.nSlamUse = 25
-object.nStealthUse = 20
+object.nIllusiveUse = 10
+object.nVaultUse = 10 
+object.nSlamUse = 10
+object.nStealthUse = 40
 object.nIllusionUse = 20
 
 --thresholds of aggression the bot must reach to use these abilities
 
-object.nIllusiveThreshold = 60
+object.nIllusiveThreshold = 40
 object.nVaultThreshold = 20 
-object.nVault2Threshold = 80 
-object.nSlamThreshold = 100
+object.nVault2Threshold = 60 
+object.nSlamThreshold = 80
 object.nStealthThreshold = 30
 object.nIllusionThreshold = 30
 object.nTauntThreshold = 50
@@ -289,6 +289,9 @@ function object:oncombateventOverride(EventData)
 		if core.itemStealth ~= nil and EventData.SourceUnit == core.unitSelf:GetUniqueID() and EventData.InflictorName == core.itemStealth:GetName() then
 			addBonus = addBonus + self.nStealthUse
 		end
+		if core.itemIllusion ~= nil and EventData.SourceUnit == core.unitSelf:GetUniqueID() and EventData.InflictorName == core.itemIllusion:GetName() then
+			addBonus = addBonus + self.nIllusion
+		end
 	end
  
 	if nAddBonus > 0 then
@@ -303,18 +306,84 @@ object.oncombatevent     = object.oncombateventOverride
 ------------------------------
 --
 ------------------------------
-function IsEnemyTowerNearby(unit)
+function IsEnemyTowerNear(unit)
+	-- Initializing the Tower Table
+	local uTower = {}
+	
 	local nTowerRange = 821.6
 	local vecMyPosition = unit:GetPosition() 
 	local tBuildings = HoN.GetUnitsInRadius(vecMyPosition, nTowerRange, core.UNIT_MASK_ALIVE + core.UNIT_MASK_BUILDING)
 	for key, unitBuilding in pairs(tBuildings) do
 		if unitBuilding:IsTower() and unitBuilding:GetCanAttack() and (unitBuilding:GetTeam()==unit:GetTeam())==false then
-			return true
+			
+			-- Checking if the Tower is Targeting The Unit
+			
+			local unitAggroTarget = unitBuilding:GetAttackTarget()
+			
+			if unitAggroTarget ~= nil and unitAggroTarget:GetUniqueID() == unit:GetUniqueID() then
+				uTower.bIsTargetingUnit = true
+			else
+				uTower.bIsTargetingUnit = false
+			end
+			
+			uTower.nLevel = unitBuilding:GetLevel()
+			uTower.nDamage = unitBuilding:GetBaseDamage()	
+			
+			return uTower
 		end
 	end
 	
+
+	
+	printTable(uTower)
+	
 	return false
 end
+
+------------------------------------------------------
+-- Calculate Possible Damage 
+------------------------------------------------------
+
+local function CalcPotentialDamage(unit)
+	local unitSelf = core.unitSelf
+	
+	local abilIllusive = skills.abilQ
+	local abilVault = skills.abilW
+	local abilSlam = skills.abilE
+	
+	local potentialDamage = 0
+	local pResist = 0
+	local mResist = 0
+	
+	if(unit) then
+	
+		if( unit:GetPhysicalResistance() and unit:GetMagicResistance()) then
+			pResist = unit:GetPhysicalResistance()
+			mResist = unit:GetMagicResistance()
+		end
+		
+		if abilIllusive:CanActivate() then
+			potentialDamage = potentialDamage + ( ( unitSelf:GetBaseDamage() + (abilIllusive:GetLevel() * 10 ) ) * (1 - pResist) )
+			--BotEcho("Illusive Damage With Resist: "..( ( unitSelf:GetBaseDamage() + (abilIllusive:GetLevel() * 10 ) ) * (1 - pResist) ))
+		end
+		 
+		if abilVault:CanActivate() then
+			potentialDamage = potentialDamage + ( ( 50 + (abilIllusive:GetLevel() * 50 ) ) * (1 - pResist) )
+			--BotEcho("Vault Damage: "..( ( 50 + (abilIllusive:GetLevel() * 50 ) ) * (1 - pResist) ))
+		end
+		    
+		if abilSlam:CanActivate() then
+			potentialDamage = potentialDamage + ( ( 30 + (abilIllusive:GetLevel() * 30 ) ) * (1 - mResist) )
+			--BotEcho("Slam Damage: "..( ( 30 + (abilIllusive:GetLevel() * 30 ) ) * (1 - mResist) ))
+		end
+		
+		potentialDamage = potentialDamage + unitSelf:GetFinalAttackDamageMax()
+
+	end
+	
+	return potentialDamage
+end
+
 ------------------------------------------------------
 -- Harass Values Based On Health   --
 ------------------------------------------------------
@@ -333,47 +402,67 @@ local function HarassExtraBonus(hero)
 	local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, vecTargetPosition)
 	local nTargetSpeed = hero:GetMoveSpeed()
 	
-	-- Health Related Bonuses
-	
-	if unitSelf:GetHealthPercent() <= 0.15 then
-		nUtil = -200
-	elseif unitSelf:GetHealthPercent() <=0.25 then
-		if hero:GetHealthPercent() >=0.8 then
-			nUtil = -100
-		elseif hero:GetHealthPercent() >=0.5 then
-			nUtil = -50
-		else
-			nUtil = -25
-		end
-	elseif unitSelf:GetHealthPercent() <=0.50 then
-		if hero:GetHealthPercent() >=0.8 then
-			nUtil = -25
-		elseif hero:GetHealthPercent() >=0.5 then
-			nUtil = 0
-		else
-			nUtil = 25
-		end
-	elseif unitSelf:GetHealthPercent() <= 1 then
-		if hero:GetHealthPercent() <=0.5 then
-			nUtil = 50
-		elseif hero:GetHealthPercent() <=0.8 then
-			nUtil = 25
-		else
-			nUtil = 10
-		end
+	local nPotentialDamage = 0
+	if hero then
+		nPotentialDamage = CalcPotentialDamage(hero)
 	end
 	
-	-- Mana Related Bonus
+	-- Health Related Bonuses
 	
-	nUtil = nUtil + (unitSelf:GetManaPercent() * 50)
+	if(unitSelf:GetLevel()>1) then
 	
-	-- Movement and Distance Related Bonus
-	
-	if (nTargetDistanceSq <= (aggroRange * aggroRange)) and (nMySpeed > nTargetSpeed) then
-		nUtil = nUtil + (nMySpeed - nTargetSpeed) + 10
-	elseif (nTargetDistanceSq > (aggroRange * aggroRange)) and (nMySpeed < nTargetSpeed) then
-		--nUtil = -5000
-		nUtil = nUtil + (nMySpeed - nTargetSpeed) - 10
+		if (unitSelf:GetHealthPercent() <=0.15 and unitSelf:GetAttackType() == "melee") or (unitSelf:GetHealthPercent() <=0.25 and unitSelf:GetAttackType() == "ranged") then
+			if hero:GetHealthPercent() >=0.20 then
+				nUtil = -200
+			else
+				nUtil = nUtil + (unitSelf:GetManaPercent() * 100)
+			end
+		elseif (unitSelf:GetHealthPercent() <=0.25 and unitSelf:GetAttackType() == "melee") or (unitSelf:GetHealthPercent() <=0.40 and unitSelf:GetAttackType() == "ranged") then
+			if hero:GetHealthPercent() >=0.8  or (nPotentialDamage - hero:GetHealth() < (nPotentialDamage * -0.5)) then
+				nUtil = -100
+			elseif hero:GetHealthPercent() >=0.5 or (nPotentialDamage - hero:GetHealth() < (nPotentialDamage * -1)) then
+				nUtil = -50
+			else
+				nUtil = -25
+			end
+		elseif unitSelf:GetHealthPercent() <=0.50  then
+			if hero:GetHealthPercent() >=0.8 or (nPotentialDamage - hero:GetHealth() <= nPotentialDamage * -0.5 ) then
+				nUtil = -20
+				nUtil = nUtil + (unitSelf:GetManaPercent() * 50)
+			elseif hero:GetHealthPercent() >=0.5 then
+				nUtil = 0
+				nUtil = nUtil + (unitSelf:GetManaPercent() * 25)
+			else
+				nUtil = 20
+			end
+		elseif unitSelf:GetHealthPercent() <= 1 then
+			if hero:GetHealthPercent() <=0.5 or (nPotentialDamage - hero:GetHealth() >= 0 ) then
+				nUtil = 30
+			elseif hero:GetHealthPercent() <=0.8 or ( nPotentialDamage - hero:GetHealth() >= nPotentialDamage ) then
+				nUtil = 20
+			else
+				nUtil = 10
+			end
+		end
+		
+		--BotEcho ("Base nUtil = ".. nUtil) 
+		--BotEcho (format("Potential Damage: %d / Target Health %d",nPotentialDamage,hero:GetHealth()))
+		
+		-- Mana Related Bonus
+		
+		--nUtil = nUtil + (unitSelf:GetManaPercent() * 20)
+		
+		-- Movement and Distance Related Bonus
+		
+		if (nTargetDistanceSq <= (aggroRange * aggroRange)) and (nMySpeed > nTargetSpeed) then
+			nUtil = nUtil + ((nMySpeed/nTargetSpeed) * 10 ) + 10
+		elseif (nTargetDistanceSq > (aggroRange * aggroRange)) and (nMySpeed < nTargetSpeed) then
+			--nUtil = -5000
+			nUtil = nUtil + ((nMySpeed/nTargetSpeed) * 10 )- 10
+		end
+		
+		--BotEcho ("+Movement Util nUtil = ".. nUtil) 
+		
 	end
 	
 	-- Debuff Modifiers
@@ -387,15 +476,48 @@ local function HarassExtraBonus(hero)
 	end
 	
 	-- NearTower Modifiers
-	if IsEnemyTowerNearby(unitSelf) then
+	local uTower = IsEnemyTowerNear(unitSelf)
+	local healthDifference = unitSelf:GetHealthPercent() - hero:GetHealthPercent()
+	
+	if ( uTower ) then
+		
+		--BotEcho(format("Level: %d / Damage: %d",uTower.nLevel,uTower.nDamage))
 		--BotEcho("Enemy Tower Nearby - Lowering Harass")
-		nUtil = nUtil + ( (unitSelf:GetHealthPercent() - hero:GetHealthPercent()) * 100 ) - 20
-	elseif IsEnemyTowerNearby(hero) then
-		--BotEcho("Ally Tower Nearby - Raising Harass")
-		nUtil = nUtil + ( (unitSelf:GetHealthPercent() - hero:GetHealthPercent()) * 100 ) + 20
+		nUtil = nUtil + ( healthDifference * 100 ) - 20
+		
+		if(unitSelf:GetHealthPercent() < 0.25) or ( healthDifference <= -0.3 ) then
+			nUtil = nUtil - 50
+		elseif(unitSelf:GetHealthPercent() < 0.5) then
+			nUtil = nUtil - 25
+		end
+		
+		if (uTower.bIsTargetingUnit) then
+			nUtil = nUtil - (uTower.nLevel * 10)
+			--BotEcho("Enemy Tower Targetting Me - Lowering Harass")
+		end
+	
 	end
 	
-		--BotEcho ("Bonus nUtil = ".. nUtil) 
+	local uTower = IsEnemyTowerNear(hero)
+		
+	if ( uTower ) then
+		--BotEcho("Ally Tower Nearby - Raising Harass")
+		nUtil = nUtil + ( healthDifference * 100 ) + 20
+		
+		if(hero:GetHealthPercent() < 0.25) or ( healthDifference >= 0.3 ) then
+			nUtil = nUtil + 50
+		elseif(unitSelf:GetHealthPercent() < 0.5) then
+			nUtil = nUtil + 25
+		end
+		
+		if (uTower.bIsTargetingUnit) then
+			nUtil = nUtil + (uTower.nLevel * 20)
+			--BotEcho("Allied Tower Targetting Enemy Hero - Raising Harass")
+		end
+
+	end
+	
+	--BotEcho ("Final Bonus nUtil = ".. nUtil) 
 	
 	return nUtil
 end
@@ -409,9 +531,10 @@ end
 local function CustomHarassUtilityFnOverride(hero)
     local nUtil = 0
     local unitSelf = core.unitSelf
-       
+    
+
 	nUtil = HarassExtraBonus(hero)
-     
+
     if skills.abilQ:CanActivate() then
         nUnil = nUtil + object.nIllusiveUp
     end
@@ -432,15 +555,22 @@ local function CustomHarassUtilityFnOverride(hero)
         nUtil = nUtil + object.nIllusionUp
     end
     
-    BotEcho ("Total nUtil = ".. nUtil) 
+    --BotEcho ("Total nUtil = ".. nUtil) 
  
     return nUtil
 end
 -- assisgn custom Harrass function to the behaviourLib object
-behaviorLib.CustomHarassUtility = CustomHarassUtilityFnOverride   
+behaviorLib.CustomHarassUtility = CustomHarassUtilityFnOverride  
+
+--------------------------------------------------------------
+-- Combos
+--------------------------------------------------------------
+--object.combos = {}
 
 
-
+--Timer Variables
+object.nComboPause = 0
+object.aLastMove = nil
 
 --------------------------------------------------------------
 --                    Harass Behavior                       --
@@ -484,6 +614,10 @@ local function HarassHeroExecuteOverride(botBrain)
 	local itemGhostMarchers = core.itemGhostMarchers
 	local abilTaunt = skills.abilT
 	
+	local abilIllusive = skills.abilQ
+	local abilVault = skills.abilW
+	local abilSlam = skills.abilE
+	
 	--BotEcho("Attacking - ".. nLastHarassUtility)
 	
 		if unitTarget:GetHealthPercent()<0.15 and abilTaunt:CanActivate() then
@@ -492,91 +626,87 @@ local function HarassHeroExecuteOverride(botBrain)
 			end
 		end
 		
-		if itemBattery then
-			if not bActionTaken then
-				if itemBattery:CanActivate() and itemBattery:GetCharges() >= 10 and unitSelf:GetHealthPercent() < 0.8 then
-					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
-				elseif itemBattery:CanActivate() and itemBattery:GetCharges() >= 1 and unitSelf:GetHealthPercent() < 0.5 then
-					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
-				end
+		if not bActionTaken and (itemBattery and itemBattery:CanActivate()) and IsInBag(itemBattery) then
+			if itemBattery:GetCharges() >= 10 and unitSelf:GetHealthPercent() < 0.8 then
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
+			elseif itemBattery:GetCharges() >= 1 and unitSelf:GetHealthPercent() < 0.5 then
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
+			elseif itemBattery:GetCharges() >= 5 and unitSelf:GetManaPercent() < 0.2 then
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
 			end
 		end
 	
-		if itemIllusion then
-			if not bActionTaken then
-				if itemIllusion:CanActivate() and nTargetDistanceSq <= ( 250 * 250 ) then
-					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemIllusion)
-				end
+		if not bActionTaken and (itemIllusion and itemIllusion:CanActivate()) and IsInBag(itemIllusion) then
+			if nTargetDistanceSq <= ( 300 * 300 ) then
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemIllusion)
 			end
 		end
 		
-		if itemStealth then
-			if not bActionTaken then
-				if not (unitSelf:HasState("State_Item3G") or unitSelf:HasState("State_Sasuke")) and itemStealth:CanActivate() then
-					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemStealth)
-				end
+		if not bActionTaken and (itemStealth and itemStealth:CanActivate()) and IsInBag(itemStealth) and not bStealth then
+			bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemStealth)
+		end
+		
+		if itemGhostMarchers and itemGhostMarchers:CanActivate() and not bStealth then
+			bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemGhostMarchers)
+		end
+		
+		if not bActionTaken and (object.nComboPause > HoN.GetGameTime()) then
+			local myRange = unitSelf:GetAttackRange()
+			if itemGhostMarchers and itemGhostMarchers:CanActivate() and not bStealth then 
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemGhostMarchers)
+			end
+			if nTargetDistanceSq <= ((myRange * myRange)) then
+				bActionTaken = core.OrderAttackClamp(botBrain, unitSelf, unitTarget)
+			else
+				bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
 			end
 		end
 		
 		if not bActionTaken and not bStealth then
 		
 			if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Checking Vault") end
-			local abilVault = skills.abilW
-			if abilVault:CanActivate() and ( (nLastHarassUtility > botBrain.nVaultThreshold) or (nLastHarassUtility > botBrain.nVault2Threshold) )  then
+
+			if abilVault:CanActivate() and (nLastHarassUtility > botBrain.nVaultThreshold) and ( object.nComboPause <= HoN.GetGameTime() )  then
 				local nRange = abilVault:GetRange() 
 				if nTargetDistanceSq <= ((nRange * nRange)) then
 					bActionTaken = core.OrderAbilityEntity(botBrain, abilVault, unitTarget)
-				else
-					if itemGhostMarchers and itemGhostMarchers:CanActivate() and not bStealth then 
-						bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemGhostMarchers)
+					if (bActionTaken) then
+						object.nComboPause = HoN.GetGameTime() + 1000
+						object.aLastMove = abilVault
 					end
-					bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
 				end
 			end
 			
 		end
 		
-		if not bActionTaken then
+		if not bActionTaken and not bStealth then
 			if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Checking Illusive") end
-			local abilIllusive = skills.abilQ
-			if abilIllusive:CanActivate() and nLastHarassUtility > botBrain.nIllusiveThreshold  then
+			if abilIllusive:CanActivate() and nLastHarassUtility > botBrain.nIllusiveThreshold and ( object.nComboPause <= HoN.GetGameTime() )  then
 			    local nRange = abilIllusive:GetRange() 
-			    if nTargetDistanceSq <= ( 300 * 300 ) then
+			    if (nTargetDistanceSq <= ( 300 * 300 )) or ( (nTargetDistanceSq - ( 300 * 300 )) < ( 200 * 200 )  and object.aLastMove == abilVault) then
 				bActionTaken = core.OrderAbility(botBrain, abilIllusive)
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Casting Illusive") end
-				bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Facing Enemy") end
-				bActionTaken = core.OrderAbility(botBrain, abilIllusive)
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Casting Illusive 2") end
-			    else
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Can't Illusive, Target Too Far") end
-				bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
+				if (bActionTaken) then
+					object.nComboPause = HoN.GetGameTime() + 500
+					object.aLastMove = abilIllusive
+				end
 			    end
 			end
 		end
     
-		if not bActionTaken then
+		if not bActionTaken and not bStealth then
 			if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Checking Slam") end
-			local abilSlam = skills.abilE
-			if abilSlam:CanActivate() and nLastHarassUtility > botBrain.nSlamThreshold  then
+			if abilSlam:CanActivate() and nLastHarassUtility > botBrain.nSlamThreshold and ( object.nComboPause <= HoN.GetGameTime() ) then
 			    if nTargetDistanceSq <= ( 200 * 200 ) then
-				bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Facing Enemy") end
 				bActionTaken = core.OrderAbility(botBrain, abilSlam)
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Casting Slam") end
-			    else
-				if bDebugEchos then BotEcho("(" .. nLastHarassUtility .. ") Can't Slam Target Too Far") end
-				bActionTaken = core.OrderMoveToUnitClamp(botBrain, unitSelf, unitTarget)
+				if (bActionTaken) then
+					object.nComboPause = HoN.GetGameTime() + 500
+					object.aLastMove = abilSlam
+				end
 			    end
 			end
 		end
    
     end
-    
-
-
-    
-
     
     if not bActionTaken then
         return object.harassExecuteOld(botBrain)
@@ -586,6 +716,26 @@ end
 object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
 
+
+----------------------------------------------------
+-- function: IsInBag
+-- Checks if the IEntityItem is in the Bot's Inventory
+-- Takes IEntityItem, Returns Boolean
+----------------------------------------------------
+function IsInBag(item)
+	local unitSelf = core.unitSelf
+	local sItemName = item:GetName()
+	local unitInventory = unitSelf:GetInventory(false)
+	for slot = 1, 6, 1 do
+		local curItem = unitInventory[slot]
+		if curItem then
+			if curItem:GetName() == sItemName and not curItem:IsRecipe() then
+				return true
+			end
+		end
+	end
+	return false
+end
 ---------------------------------------------
 -- Attack Creeps Override
 ---------------------------------------------
@@ -595,9 +745,6 @@ function AttackCreepsExecuteCustom(botBrain)
 local unitSelf = core.unitSelf
 	local currentTarget = core.unitCreepTarget
 	local bActionTaken = false
-	core.FindItems()
-	
-	local itemHatchet = core.itemHatchet
 
 	if currentTarget and core.CanSeeUnit(botBrain, currentTarget) then		
 		local vecTargetPos = currentTarget:GetPosition()
@@ -606,16 +753,17 @@ local unitSelf = core.unitSelf
 
 		if currentTarget ~= nil then			
 			
+			core.FindItems(botBrain)
+			local itemHatchet = core.itemHatchet
 			if nDistSq < nAttackRangeSq and unitSelf:IsAttackReady() then
 				--BotEcho("Attacking Creep")
 				--only attack when in nRange, so not to aggro towers/creeps until necessary, and move forward when attack is on cd
 				bActionTaken = core.OrderAttackClamp(botBrain, unitSelf, currentTarget)
-			
-			elseif itemHatchet then
+			elseif (itemHatchet and itemHatchet:CanActivate() and IsInBag(itemHatchet)) then
 				local nHatchRange = itemHatchet:GetRange()
-				if nDistSq < ( nHatchRange * nHatchRange ) and itemHatchet:CanActivate() and currentTarget:GetTeam() ~= unitSelf:GetTeam() then
-				--BotEcho("Attempting Hatchet")
-				bActionTaken = core.OrderItemEntityClamp(botBrain, unitSelf, itemHatchet, currentTarget)
+				if nDistSq < ( nHatchRange * nHatchRange ) and currentTarget:GetTeam() ~= unitSelf:GetTeam() then					
+					--BotEcho("Attempting Hatchet")
+					bActionTaken = core.OrderItemEntityClamp(botBrain, unitSelf, itemHatchet, currentTarget)
 				end			
 			else
 				--BotEcho("MOVIN OUT")
@@ -645,41 +793,37 @@ local function RetreatFromThreatExecuteOverride(botBrain)
 	local nlastRetreatUtil = behaviorLib.lastRetreatUtil
 	
 	local unitSelf = core.unitSelf
+	local bStealth = unitSelf:HasState("State_Item3G") or unitSelf:HasState("State_Sasuke")
 	core.FindItems()
 	
 	if bDebugEchos then BotEcho("Running - ".. nlastRetreatUtil) end
 	
 	--Activate battery if we can
 	local itemBattery = core.itemBattery
-	if not bActionTaken then
-		if itemBattery then
-			if itemBattery:CanActivate() and itemBattery:GetCharges() >= 10 and unitSelf:GetHealthPercent() < 0.8 then
+	if not bActionTaken and (itemBattery and itemBattery:CanActivate() and itemBattery:GetCharges() >= 1)  then
+			if itemBattery:GetCharges() >= 10 and unitSelf:GetHealthPercent() < 0.8 then
 				if bDebugEchos then BotEcho("Running - Using Battery") end
-					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
-				elseif itemBattery:CanActivate() and itemBattery:GetCharges() >= 1 and unitSelf:GetHealthPercent() < 0.5 then
-					bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
+			elseif itemBattery:GetCharges() >= 1 and unitSelf:GetHealthPercent() < 0.5 then
+				bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemBattery)
 			end
-		end
 	end
 		
-	if not bActionTaken then
-		--Activate stealth if we can
+	if not bActionTaken and nlastRetreatUtil >= botBrain.nretreatStealthThreshold then
+	--Activate stealth if we can
 		local itemStealth = core.itemStealth
-		if bDebugEchos then BotEcho(behaviorLib.lastRetreatUtil.. "/- Stealth - /".. botBrain.nretreatStealthThreshold ) end
-		if nlastRetreatUtil >= botBrain.nretreatStealthThreshold and itemStealth and itemStealth:CanActivate() then
+		if itemStealth and itemStealth:CanActivate() then
 			if bDebugEchos then BotEcho("Running - Attempting Stealth") end
 			bActionTaken = core.OrderItemClamp(botBrain, unitSelf, itemStealth)
 		end
 	end
 		
-	if not bActionTaken then
+	if not bActionTaken and not bStealth then
 		--Activate ghost marchers if we can
 		local itemGhostMarchers = core.itemGhostMarchers
-		if not (unitSelf:HasState("State_Item3G") or unitSelf:HasState("State_Sasuke")) then
-			if behaviorLib.lastRetreatUtil >= behaviorLib.retreatGhostMarchersThreshold and itemGhostMarchers and itemGhostMarchers:CanActivate() then
-				if bDebugEchos then BotEcho("Running - Using Ghost Marchers") end
-				bActionTaken = core.OrderItemClamp(botBrain, core.unitSelf, itemGhostMarchers)
-			end
+		if behaviorLib.lastRetreatUtil >= behaviorLib.retreatGhostMarchersThreshold and itemGhostMarchers and itemGhostMarchers:CanActivate() then
+			if bDebugEchos then BotEcho("Running - Using Ghost Marchers") end
+			bActionTaken = core.OrderItemClamp(botBrain, core.unitSelf, itemGhostMarchers)
 		end
 	end
 	
@@ -692,6 +836,28 @@ end
 -- override the behaviour
 object.RetreatFromThreatExecuteOld = behaviorLib.RetreatFromThreatBehavior["Execute"]
 behaviorLib.RetreatFromThreatBehavior["Execute"] = RetreatFromThreatExecuteOverride
+
+----------------------------------
+-- HealAtWellSpendGold Override
+----------------------------------
+function behaviorLib.HealAtWellAndSpendGold(botBrain)
+	local hpPercent = core.unitSelf:GetHealthPercent()
+	local myGold = botBrain:GetGold()
+	local bGotWhatINeed = (behaviorLib.buyState == behaviorLib.BuyStateLateItems and #behaviorLib.curItemList <= 1)
+	
+	if hpPercent < 0.5 and not bGotWhatINeed then
+		if(myGold >= 4000) then
+			return 100
+		elseif(myGold >= 2000) then
+			return 50
+		end
+	end
+
+	return object.HealAtWellBehaviorUtilityOld(botBrain)
+end
+
+object.HealAtWellBehaviorUtilityOld = behaviorLib.HealAtWellBehavior["Utility"]
+behaviorLib.HealAtWellBehavior["Utility"] = behaviorLib.HealAtWellAndSpendGold
 
 ----------------------------------
 --  FindItems Override

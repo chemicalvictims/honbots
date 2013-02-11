@@ -15,7 +15,7 @@ object.bAttackCommands 	= true
 object.bAbilityCommands = true
 object.bOtherCommands 	= true
 
-object.bReportBehavior = false
+object.bReportBehavior = true
 object.bDebugUtility = false
 object.bDebugExecute = false
 
@@ -129,7 +129,9 @@ object.nChronosphereUse = 70
 object.nCurseOfAgesNext = 6
 
 object.nTimeLeapThreshold = 35
+object.nTimeLeapHPThreshold = 0.35
 object.nChronosphereThreshold = 50
+object.nChronosphereRetreatHPThreshold = 0.15
 
 local function IsCurseOfAgesNext()
 	return skills.abilCurseOfAges:GetCharges() <= 1 
@@ -164,6 +166,107 @@ local function AbilitiesUpUtility(hero)
 	
 	return nUtility
 end
+
+
+
+
+
+
+
+
+-- attetntion:
+--[[
+x               x
+ x       -
+			  x
+			  
+	Imagine x are creeps, and - is their center
+	this will be correctly calculated, however
+	it does not state that creeps are in range
+	of certain abilities
+]]
+local function groupCenter(tGroup, nMinCount)
+	if nMinCount == nil then nMinCount = 1 end
+	
+	if tGroup ~= nil then
+		local vGroupCenter = Vector3.Create()
+		local nGroupCount = 0 
+		for id, creep in pairs(tGroup) do
+			vGroupCenter = vGroupCenter + creep:GetPosition()
+			nGroupCount = nGroupCount + 1
+		end
+		
+		if nGroupCount < nMinCount then 
+			return nil
+		else
+			return vGroupCenter/nGroupCount-- center vector
+		end
+	else
+		return nil	
+	end
+end
+
+-- Filters given Group of enemies for range to their center, returns table
+-- we dont filter for any count of heroes, thats a thing we do later on. (PERFORMANCE?)
+local function filterRange(tGroup, vecGroupCenter, nRange)
+	if tGroup == nil or vecGroupCenter == nil or nRange == nil then return nil end
+	
+	
+	local tTableTemp = {}
+	for id, creep in pairs(tGroup) do
+		---BotEcho('ID: '..id..' creep: '..creep)
+		if Vector3.Distance2D(creep:GetPosition(), vecGroupCenter) < (nRange*nRange) then
+			tinsert(tTableTemp, creep)
+		end
+	end
+
+	if #tTableTemp <= 0 then 
+		return nil
+	else
+		return tTableTemp -- table containing only relevant units for the ultimate
+	end
+end
+
+
+local function executeChronosphere(botBrain, unitSelf, nMinEnemies)
+	if nMinEnemies == nil then nMinEnemies = 1 end
+
+	local abilChronosphere = skills.abilChronosphere
+	local nCheckRange = abilChronosphere:GetRange() + object.nChronosphereCheckRangeBuffer
+	local nRadius = GetChronosphereRadius()
+
+	local tEnemies = core.localUnits["EnemyHeroes"]
+	if tEnemies == nil then return false end
+	
+	local nTargetRange = abilChronosphere:GetTargetRadius()
+	local nRange = abilChronosphere:GetRange()
+	local vGroupCenter = groupCenter(tEnemies) -- gives center of enemy heroes	
+	
+	if vGroupCenter == nil then return false end
+	-- TODO: Add leap mechanics here, so we might leap in and do the ultimate
+	if nRange*nRange >= Vector3.Distance2DSq(unitSelf:GetPosition(), vGroupCenter) then
+		tEnemies = filterRange(tEnemies, vGroupCenter, nTargetRange)
+	end
+	
+	local nEnemyCount = #tEnemies	
+	if nEnemyCount >= 4 then 
+		return  core.OrderAbilityPosition(botBrain, abilChronosphere, vGroupCenter) 
+	end 
+	
+	
+	local tAllies = core.localUnits["AllyHeroes"]
+	local nAllyCount = 0
+	if not tAllies == nil then
+		tAllies = filterRange(tAllies, vGroupCenter, nTargetRange)
+		nAllyCount = #tAllies
+	end
+		
+	if nEnemyCount > nMinEnemies  and  nEnemyCount >= nAllyCount then -- check low life enemies too, if leap is on cd
+		return  core.OrderAbilityPosition(botBrain, abilChronosphere, vGroupCenter) -- order ultimate in center of group, it has proofen worthy enough :)
+	end
+end
+
+
 
 --Chronos ability use gives bonus to harass util for a while
 function object:oncombateventOverride(EventData)
@@ -212,6 +315,7 @@ local function HarassHeroExecuteOverride(botBrain)
 		return false --can not execute, move on to the next behavior
 	end
 	
+	
 	local unitSelf = core.unitSelf
 	
 	local vecMyPosition = unitSelf:GetPosition()
@@ -223,54 +327,64 @@ local function HarassHeroExecuteOverride(botBrain)
 	local nTargetExtraRange = core.GetExtraRange(unitTarget)
 	local nTargetDistanceSq = Vector3.Distance2DSq(vecMyPosition, vecTargetPosition)
 	local bTargetRooted = unitTarget:IsStunned() or unitTarget:IsImmobilized() or unitTarget:GetMoveSpeed() < 200
+	local nHPPercentage = unitSelf:GetHealthPercent()
 	
 	local nLastHarassUtility = behaviorLib.lastHarassUtil
-	--local bCanSee = core.CanSeeUnit(botBrain, unitTarget)	
 	
-	if bDebugEchos then BotEcho("Defiler HarassHero at "..nLastHarassUtility) end
+	if bDebugEchos then BotEcho("Chronos HarassHero at "..nLastHarassUtility) end
 	local bActionTaken = false
 	
 	--Time Leap
-	if not bActionTaken and not bTargetRooted and nLastHarassUtility > botBrain.nTimeLeapThreshold then
+	local nLeapRange = skills.abilTimeLeap:GetRange()
+	if not bActionTaken and Vector3.Distance2DSq(vecMyPosition, vecTargetPosition) >= nLeapRange*nLeapRange*0.3 and not bTargetRooted and nLastHarassUtility > botBrain.nTimeLeapThreshold then
 		if bDebugEchos then BotEcho("  No action yet, checking time leap") end
 		local abilTimeLeap = skills.abilTimeLeap
+		
 		if abilTimeLeap:CanActivate() then
-			local vecTargetTraveling = nil
-			if unitTarget.bIsMemoryUnit and unitTarget.lastStoredPosition then
-				vecTargetTraveling = Vector3.Normalize(vecTargetPosition - unitTarget.lastStoredPosition)
-			else
-				local unitEnemyWell = core.enemyWell
-				if unitEnemyWell then
-					--TODO: use heading
-					vecTargetTraveling = Vector3.Normalize(unitEnemyWell:GetPosition() - vecTargetPosition)
+			if object.nTimeLeapHPThreshold >= nHPPercentage then
+				local vecTargetTraveling = nil
+				if unitTarget.bIsMemoryUnit and unitTarget.lastStoredPosition then
+					vecTargetTraveling = Vector3.Normalize(vecTargetPosition - unitTarget.lastStoredPosition)
+				else
+					local unitEnemyWell = core.enemyWell
+					if unitEnemyWell then
+						--TODO: use heading
+						vecTargetTraveling = Vector3.Normalize(unitEnemyWell:GetPosition() - vecTargetPosition)
+					end
 				end
+				
+				local vecAbilityTarget = vecTargetPosition
+				if vecTargetTraveling then
+					vecAbilityTarget = vecTargetPosition + vecTargetTraveling * (GetTimeLeapRadius() - object.nTimeLeapRadiusBuffer)
+				end
+				
+				bActionTaken = core.OrderAbilityPosition(botBrain, abilTimeLeap, vecAbilityTarget)
+			--else
+				
 			end
-			
-			local vecAbilityTarget = vecTargetPosition
-			if vecTargetTraveling then
-				vecAbilityTarget = vecTargetPosition + vecTargetTraveling * (GetTimeLeapRadius() - object.nTimeLeapRadiusBuffer)
-			end
-			
-			bActionTaken = core.OrderAbilityPosition(botBrain, abilTimeLeap, vecAbilityTarget)
 		end
 	end
 	
 	--Chronosphere
-	if not bActionTaken and nLastHarassUtility > botBrain.nChronosphereThreshold then
-		if bDebugEchos then BotEcho("  No action yet, checking chronosphere") end
-		local abilChronosphere = skills.abilChronosphere
-		if abilChronosphere:CanActivate() then
-			local nCheckRange = abilChronosphere:GetRange() + object.nChronosphereCheckRangeBuffer
-			local nRadius = GetChronosphereRadius()
-					
-			local vecAbilityPosition = core.AoETargeting(core.unitSelf, nCheckRange, nRadius, true, unitTarget, core.enemyTeam, nil)
+	local abilChronosphere = skills.abilChronosphere
+	if not bActionTaken and abilChronosphere:CanActivate() then
 	
-			if vecAbilityPosition == nil then
-				vecAbilityPosition = vecTargetPosition
-			end
+		--	BotEcho('Prepare to be sphered')
+		if bDebugEchos then BotEcho("  No action yet, checking chronosphere") end
+		
+		-- Chronos uses chronosphere if he and one other enemy are both low, so he tries to finish him with ultimate safly
+		if object.nChronosphereRetreatHPThreshold+0.20 >= nHPPercentage and unitTarget:GetHealthPercent() <= object.nChronosphereRetreatHPThreshold+0.20  then
+			BotEcho('Use it'..unitTarget:GetHealthPercent())
+			bActionTaken = executeChronosphere(botBrain, unitSelf, 0)
 			
-			bActionTaken = core.OrderAbilityPosition(botBrain, abilChronosphere, vecAbilityPosition)
-		end
+		elseif nLastHarassUtility > botBrain.nChronosphereThreshold then
+			--[[ 
+				Chronosphere execution
+				Gets group center
+				then checks for valid ultimate, first if enough are in range, then if there arent to much allies
+			]]
+			bActionTaken = executeChronosphere(botBrain, unitSelf)
+		end 
 	end
 		
 	if not bActionTaken then
@@ -280,6 +394,36 @@ local function HarassHeroExecuteOverride(botBrain)
 end
 object.harassExecuteOld = behaviorLib.HarassHeroBehavior["Execute"]
 behaviorLib.HarassHeroBehavior["Execute"] = HarassHeroExecuteOverride
+
+
+
+
+
+local function HealAtWellUtilityOverride(botBrain)
+	local abilChronosphere = skills.abilChronosphere
+	local unitSelf = core.unitSelf 
+	local nHPPercentage = unitSelf:GetHealthPercent()
+
+	-- Chronos uses chronosphere for emergency retreat if he still has it aviable
+	if abilChronosphere:CanActivate() and object.nChronosphereRetreatHPThreshold >= nHPPercentage  then
+		executeChronosphere(botBrain, core.unitSelf, 0)
+	end 
+	
+	object.HealAtWellUtilityOld(botBrain)
+end
+object.HealAtWellUtilityOld = behaviorLib.HealAtWellBehavior["Execute"]
+behaviorLib.HealAtWellBehavior["Execute"] = HealAtWellUtilityOverride
+
+
+
+
+
+
+
+
+
+
+
 
 
 ----------------------------------

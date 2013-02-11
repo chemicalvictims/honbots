@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bot
+	name="recklessd"
+	description="I AM the RECKLESS DISASTER !"
+	heroname="Hero_Berzerker"
+	rootlua="recklessd_main.lua"
+	defaultplayername="BerzerkBot"
+	precachepath="/heroes/berzerker"
+/>
