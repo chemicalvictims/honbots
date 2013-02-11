@@ -77,7 +77,7 @@ object.heroName = 'Hero_HellDemon'
 --   item buy order. internal names  
 behaviorLib.StartingItems  = {"3 Item_MinorTotem", "Item_MarkOfTheNovice", "Item_RunesOfTheBlight", "Item_GuardianRing"}
 behaviorLib.LaneItems  = {"Item_ManaRegen3", "Item_Marchers", "Item_Intelligence5", "Item_Replenish"}
-behaviorLib.MidItems  = {"Item_Steamboots", "Item_HealthMana2", "Item_Morph "}
+behaviorLib.MidItems  = {"Item_Steamboots", "Item_HealthMana2", "Item_Morph"}
 behaviorLib.LateItems  = {"Item_FrostfieldPlate", "Item_BehemothsHeart", "Item_BarrierIdol"}
 
 
@@ -232,8 +232,8 @@ local function funcFindItemsOverride(botBrain)
     if core.itemRoT ~= nil and not core.itemRoT:IsValid() then
         core.itemRoT = nil
     end
-    if core.itemManaRing ~= nil and not core.itemManaRing:IsValid() then
-        core.itemManaRing = nil
+    if core.itemRoS ~= nil and not core.itemRoS:IsValid() then
+        core.itemRoS = nil
     end
     if core.itemSheepstick ~= nil and not core.itemSheepstick:IsValid() then
         core.itemSheepstick = nil
@@ -246,7 +246,7 @@ local function funcFindItemsOverride(botBrain)
     end
 
     if bUpdated then
-        if core.itemRoT and core.itemManaRing and core.itemSheepstick and core.itemFrostfieldPlate and core.itemBarrierIdol then
+        if core.itemRoT and core.itemRoS and core.itemSheepstick and core.itemFrostfieldPlate and core.itemBarrierIdol then
             return
         end
 
@@ -257,14 +257,17 @@ local function funcFindItemsOverride(botBrain)
                 if core.itemRoT == nil and curItem:GetName() == "Item_ManaRegen3" then
                     core.itemRoT = core.WrapInTable(curItem)
                 end
-                if core.itemManaRing == nil and curItem:GetName() == "Item_Replenish" then
-                    core.itemManaRing = core.WrapInTable(curItem)
+                if core.itemRoS == nil and curItem:GetName() == "Item_Replenish" then
+                    core.itemRoS = core.WrapInTable(curItem)
+                    core.itemRoS.nReplenishValue = 135
+                    core.itemRoS.nRadius = 500
                 end
                 if core.itemSheepstick == nil and curItem:GetName() == "Item_Morph" then
                     core.itemSheepstick = core.WrapInTable(curItem)
                 end
                 if core.itemFrostfieldPlate == nil and curItem:GetName() == "Item_FrostfieldPlate" then
                     core.itemFrostfieldPlate = core.WrapInTable(curItem)
+                    core.itemFrostfieldPlate.nRadius = 1000
                 end
                 if core.itemBarrierIdol == nil and curItem:GetName() == "Item_BarrierIdol" then
                     core.itemBarrierIdol = core.WrapInTable(curItem)
@@ -337,7 +340,7 @@ behaviorLib.CustomHarassUtility = CustomHarassUtilityOverride
     Judgement to hit before casting Demonic Execution
 ]]--
 local function GetPotentialDamage(unitTarget, bExecutionFirst)
-    BotEcho("Calculating potential damage")
+    --BotEcho("Calculating potential damage")
 
     bExecutionFirst = bExecutionFirst or true
     local unitSelf = core.unitSelf
@@ -395,8 +398,8 @@ local function GetPotentialDamage(unitTarget, bExecutionFirst)
     if abilDemonicExecution:CanActivate() and nTargetDistanceSq < nExecutionRangeSq and nCurMana > abilDemonicExecution:GetManaCost() then
         --Calculate the amount of damage that can be dealt by casting Demonic Execution
         nPotentialDamage = (1 - nTargetMagicResistance) * nExecuteLevelDamageMultiplier * nTargetMissingHealth
-        BotEcho("Missing health: " .. nTargetMissingHealth)
-        BotEcho("Damage from ult: " .. nPotentialDamage)
+        --BotEcho("Missing health: " .. nTargetMissingHealth)
+        --BotEcho("Damage from ult: " .. nPotentialDamage)
 
         --Adjust for mana just used
         nCurMana = nCurMana - abilDemonicExecution:GetManaCost()
@@ -417,14 +420,14 @@ local function GetPotentialDamage(unitTarget, bExecutionFirst)
     end
 
     nPotentialDamage = nPotentialDamage + nPotentialAttacks * nAttackDamage
-    BotEcho("Damage from attacks: " .. nPotentialAttacks * nAttackDamage)    
+    --BotEcho("Damage from attacks: " .. nPotentialAttacks * nAttackDamage)    
 
     local nDistanceWalkingSq = unitSelf:GetMoveSpeed()
     nDistanceWalkingSq = nDistanceWalkingSq * nDistanceWalkingSq
     --Put in another heal if we can walk in range in 1 second just for good measure
     if abilJudgement:CanActivate() and nTargetDistanceSq - nDistanceWalkingSq < nJudgementRangeSq and nCurMana > abilJudgement:GetManaCost() then
         nPotentialDamage = nPotentialDamage + abilJudgement:GetLevel() * 70 * (1 - nTargetMagicResistance)
-        BotEcho("Damage from heal: " .. abilJudgement:GetLevel() * 70 * (1 - nTargetMagicResistance))  
+        --BotEcho("Damage from heal: " .. abilJudgement:GetLevel() * 70 * (1 - nTargetMagicResistance))  
     end
 
     return nPotentialDamage
@@ -439,6 +442,7 @@ end
 --
 local function HarassHeroExecuteOverride(botBrain)
     local bDebugEchos = true
+    local bDebugHarassUtility = false and bDebugEchos
     
     local unitTarget = behaviorLib.heroTarget
     if unitTarget == nil then
@@ -463,7 +467,7 @@ local function HarassHeroExecuteOverride(botBrain)
     local abilJudgement = skills.abilJudgement
     local abilDemonicExecution = skills.abilDemonicExecution
     
-    if bDebugEchos then BotEcho("SoulReaper HarassHero at "..nLastHarassUtility) end
+    if bDebugHarassUtility then BotEcho("SoulReaper HarassHero at "..nLastHarassUtility) end
     local bActionTaken = false
 
     --since we are using an old pointer, ensure we can still see the target for entity targeting
@@ -511,37 +515,39 @@ local function HarassHeroExecuteOverride(botBrain)
             nExecuteLevelDamageMultiplier = 0.9
         end
         if nLastHarassUtility > nExecuteLevelThreshold then
-            if bDebugEchos then BotEcho("  No action yet, checking demonic execution - current threshold is " .. nExecuteLevelThreshold) end
+            if bDebugHarassUtility then BotEcho("  No action yet, checking demonic execution - current threshold is " .. nExecuteLevelThreshold) end
 
             --Only do calcs if in range
             local nRange = abilDemonicExecution:GetRange()
             if nTargetDistanceSq < (nRange * nRange) then
                 local nPotentialDamage = GetPotentialDamage(unitTarget, true)
-                if bDebugEchos then 
+                if bDebugHarassUtility then 
                     BotEcho("Potential damage: " .. nPotentialDamage)
                     BotEcho("Target Health: " .. unitTarget:GetHealth())
                 end
 
                 if abilDemonicExecution:CanActivate() and unitTarget:GetHealth() < nPotentialDamage then
-                    if bDebugEchos then BotEcho("Using demonic execution") end
+                if bDebugEchos then BotEcho("USING SKILL DEMONIC EXECUTION!!!!") end
                     bActionTaken = core.OrderAbilityEntity(botBrain, abilDemonicExecution, unitTarget)
                 end
             end
         end
     end
-    
+
     --Judgement
     local nJudgementDamage = 0
     if unitTarget and unitTarget:GetMagicResistance() then
         nJudgementDamage = abilJudgement:GetLevel() * 70 * (1 - unitTarget:GetMagicResistance())
     end 
+
     if nLastHarassUtility > botBrain.nHealThreshold or nJudgementDamage > unitTarget:GetHealth() then
         --if bDebugEchos then BotEcho("  No action yet, checking judgement") end
         if abilJudgement:CanActivate() then
             local nRange = abilJudgement:GetTargetRadius()
             nRange = nRange * 0.8
+
             if nTargetDistanceSq < (nRange * nRange) then
-                if bDebugEchos then BotEcho("Using judgement") end
+                if bDebugEchos then BotEcho("USING SKILL JUDGEMENT!!!!") end
                 bActionTaken = core.OrderAbility(botBrain, abilJudgement)
             end
         end
@@ -605,7 +611,7 @@ end
 behaviorLib.nHealCostBonus = 10
 behaviorLib.nHealCostBonusCooldownThresholdMul = 4.0
 function behaviorLib.AbilityCostBonusFn(unitSelf, ability)
-    local bDebugEchos = false
+    local bDebugEchos = true
     
     local nCost =       ability:GetManaCost()
     local nCooldownMS = ability:GetCooldownTime()
@@ -650,8 +656,8 @@ function behaviorLib.HealUtility(botBrain)
         for key, hero in pairs(tTargets) do
             --Don't heal ourself if we are going to head back to the well anyway, 
             --  as it could cause us to retrace half a walkback
-            if bDebugEchos and core.GetCurrentBehaviorName(botBrain) == "HealAtWell" then BotEcho ("Current health %: "..unitSelf:GetHealthPercent()) end
-            if hero:GetUniqueID() ~= unitSelf:GetUniqueID() or core.GetCurrentBehaviorName(botBrain) ~= "HealAtWell" then
+            if hero:GetUniqueID() ~= unitSelf:GetUniqueID() or (unitSelf:GetHealthPercent() * 100 < 25) or core.GetCurrentBehaviorName(botBrain) ~= "HealAtWell" then
+                --if bDebugEchos and (unitSelf:GetHealthPercent() * 100 < 25) and core.GetCurrentBehaviorName(botBrain) == "HealAtWell" then BotEcho("Calculating heal utility due to low health and HealAtWell behavior") end
                 local nCurrentUtility = 0
                 
                 local nHealthUtility = behaviorLib.HealHealthUtilityFn(hero) * behaviorLib.nHealHealthUtilityMul
@@ -720,6 +726,166 @@ behaviorLib.HealBehavior["Execute"] = behaviorLib.HealExecute
 behaviorLib.HealBehavior["Name"] = "Heal"
 tinsert(behaviorLib.tBehaviors, behaviorLib.HealBehavior)
 
+----------------------------------
+--    SoulReapers's Help behavior
+--    
+--    Utility: 
+--    Execute: Use Ring of Sorcery
+--    Taken from Djulio's BeheBotU
+----------------------------------
+ 
+behaviorLib.nReplenishUtilityMul = 1.3
+behaviorLib.nReplenishManaUtilityMul = 1.0
+behaviorLib.nReplenishTimeToLiveUtilityMul = 0.5
+ 
+function behaviorLib.ReplenishManaUtilityFn(unitHero)
+    local nUtility = 0
+     
+    local nYIntercept = 100
+    local nXIntercept = 100
+    local nOrder = 2
+ 
+    nUtility = core.ExpDecay(unitHero:GetManaPercent() * 100, nYIntercept, nXIntercept, nOrder)
+     
+    return nUtility
+end
+ 
+function behaviorLib.ManaVelocityUtilityFn(unitHero)
+    --Increases as your time to live based on your damage velocity decreases
+    local nUtility = 0
+     
+    local nManaVelocity = unitHero:GetManaRegen()    -- Get mana regen
+    local nMana = unitHero:GetMana()                -- Get mana
+    local nTimeToLive = 9999
+    if nManaVelocity < 0 then
+        nTimeToLive = nMana / (-1 * nManaVelocity)
+         
+        local nYIntercept = 100
+        local nXIntercept = 20
+        local nOrder = 2
+        nUtility = core.ExpDecay(nTimeToLive, nYIntercept, nXIntercept, nOrder)
+    end
+     
+    nUtility = Clamp(nUtility, 0, 100)
+     
+    --BotEcho(format("%d timeToLive: %g  healthVelocity: %g", HoN.GetGameTime(), nTimeToLive, nManaVelocity))
+     
+    return nUtility, nTimeToLive
+end
+ 
+behaviorLib.nReplenishCostBonus = 10
+behaviorLib.nReplenishCostBonusCooldownThresholdMul = 4.0
+--[[function behaviorLib.AbilityCostBonusFn(unitSelf, ability)
+    local bDebugEchos = false
+     
+    local nCost =        ability:GetManaCost()        -- Get item mana cost
+    local nCooldownMS =    ability:GetCooldownTime()    -- Get item cooldown
+    local nRegen =        unitSelf:GetManaRegen()        -- Get bot's mana regeneration
+     
+    local nTimeToRegenMS = nCost / nRegen * 1000
+     
+    if bDebugEchos then BotEcho(format("AbilityCostBonusFn - nCost: %d  nCooldown: %d  nRegen: %g  nTimeToRegen: %d", nCost, nCooldownMS, nRegen, nTimeToRegenMS)) end
+    if nTimeToRegenMS < nCooldownMS * behaviorLib.nReplenishCostBonusCooldownThresholdMul then
+        return behaviorLib.nReplenishCostBonus
+    end
+     
+    return 0
+end]]
+ 
+behaviorLib.unitReplenishTarget = nil
+behaviorLib.nReplenishTimeToLive = nil
+function behaviorLib.ReplenishUtility(botBrain)
+    local bDebugEchos = false
+     
+    if bDebugEchos then BotEcho("ReplenishUtility") end
+     
+    local nUtility = 0
+ 
+    local unitSelf = core.unitSelf
+    behaviorLib.unitReplenishTarget = nil
+     
+    core.FindItems()
+    local itemRoS = core.itemRoS
+     
+    local nHighestUtility = 0
+    local unitTarget = nil
+    local nTargetTimeToLive = nil
+    local sAbilName = ""
+    if itemRoS and itemRoS:CanActivate() then
+        local tTargets = core.CopyTable(core.localUnits["AllyHeroes"])     -- Get allies close to the bot
+        tTargets[unitSelf:GetUniqueID()] = unitSelf                     -- Identify bot as a target too
+        for key, hero in pairs(tTargets) do
+            --Don't mana ourself if we are going to head back to the well anyway, 
+            --    as it could cause us to retrace half a walkback
+            if hero:GetUniqueID() ~= unitSelf:GetUniqueID() or core.GetCurrentBehaviorName(botBrain) ~= "HealAtWell" then
+                local nCurrentUtility = 0
+                 
+                local nManaUtility = behaviorLib.ReplenishManaUtilityFn(hero) * behaviorLib.nReplenishManaUtilityMul
+                local nTimeToLiveUtility = nil
+                local nCurrentTimeToLive = nil
+                nTimeToLiveUtility, nCurrentTimeToLive = behaviorLib.ManaVelocityUtilityFn(hero)
+                nTimeToLiveUtility = nTimeToLiveUtility * behaviorLib.nReplenishTimeToLiveUtilityMul
+                nCurrentUtility = nManaUtility + nTimeToLiveUtility
+                 
+                if nCurrentUtility > nHighestUtility then
+                    nHighestUtility = nCurrentUtility
+                    nTargetTimeToLive = nCurrentTimeToLive
+                    unitTarget = hero
+                    if bDebugEchos then BotEcho(format("%s Replenish util: %d  health: %d  ttl:%d", hero:GetTypeName(), nCurrentUtility, nReplenishUtility, nTimeToLiveUtility)) end
+                end
+            end
+        end
+ 
+        if unitTarget then
+            nUtility = nHighestUtility                
+            sAbilName = "Replenish"
+         
+            behaviorLib.unitReplenishTarget = unitTarget
+            behaviorLib.nReplenishTimeToLive = nTargetTimeToLive
+        end       
+    end
+     
+    if bDebugEchos then BotEcho(format("    abil: %s util: %d", sAbilName, nUtility)) end
+     
+    nUtility = nUtility * behaviorLib.nReplenishUtilityMul
+     
+    if botBrain.bDebugUtility == true and nUtility ~= 0 then
+        BotEcho(format("  HelpUtility: %g", nUtility))
+    end
+     
+    return nUtility
+end
+ 
+-- Executing the behavior to use the Ring of Sorcery
+function behaviorLib.ReplenishExecute(botBrain)
+    core.FindItems()
+    local itemRoS = core.itemRoS
+     
+    local unitReplenishTarget = behaviorLib.unitReplenishTarget
+    local nReplenishTimeToLive = behaviorLib.nReplenishTimeToLive
+     
+    if unitReplenishTarget and itemRoS and itemRoS:CanActivate() then
+        local unitSelf = core.unitSelf                                                    -- Get bot's position
+        local vecTargetPosition = unitReplenishTarget:GetPosition()                        -- Get target's position
+        local nDistance = Vector3.Distance2D(unitSelf:GetPosition(), vecTargetPosition)    -- Get distance between bot and target
+        if nDistance < itemRoS.nRadius then
+            core.OrderItemClamp(botBrain, unitSelf, itemRoS) -- Use Ring of Sorcery, if in range
+        else
+            core.OrderMoveToUnitClamp(botBrain, unitSelf, unitReplenishTarget) -- Move closer to target
+        end
+    else
+        return false
+    end
+     
+    return true
+end
+ 
+behaviorLib.ReplenishBehavior = {}
+behaviorLib.ReplenishBehavior["Utility"] = behaviorLib.ReplenishUtility
+behaviorLib.ReplenishBehavior["Execute"] = behaviorLib.ReplenishExecute
+behaviorLib.ReplenishBehavior["Name"] = "Replenish"
+tinsert(behaviorLib.tBehaviors, behaviorLib.ReplenishBehavior)
+
 function GetClosestEnemyHero(botBrain)
     local unitClosestHero = nil
     local nClosestHeroDistSq = 99999*99999
@@ -758,11 +924,11 @@ end
 
 function behaviorLib.GetCreepAttackTarget(botBrain, unitEnemyCreep, unitAllyCreep) --called pretty much constantly
     local unitSelf = core.unitSelf
-    if gold>5600 then
-        --BotEcho("Returning to well!")
+    if botBrain:GetGold() > 3000 then
         local wellPos = core.allyWell and core.allyWell:GetPosition() or behaviorLib.PositionSelfBackUp()
         core.OrderMoveToPosAndHoldClamp(botBrain, unitSelf, wellPos, false)
     end
+
     -- random stuff that should be called each frame!
     target = GetClosestEnemyHero(botBrain)
     --BotEcho(target:GetDisplayName())
@@ -1071,7 +1237,6 @@ local function abilityPush(botBrain, unitSelf)
         end
         local bShouldCast = nLowHealthCreepsInRange > 1 or (nCreepsInRange > 3 and bNearTower)
 
-        if debugAbilityPush then BotEcho("Should cast: " .. tostring(bShouldCast)) end
         if nDistanceMiddleSq < nJudgementRangeSq and bShouldCast then --range check for judgement push
             return core.OrderAbility(botBrain, abilJudgement)
         end
